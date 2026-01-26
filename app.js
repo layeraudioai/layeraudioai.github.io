@@ -32,7 +32,6 @@ async function initFFmpeg() {
     await ffmpeg.load({
         coreURL: await toBlobURL('ffmpeg-core.js', 'text/javascript'),
         wasmURL: await toBlobURL('ffmpeg-core.wasm', 'application/wasm'),
-        workerURL: await toBlobURL('ffmpeg-core.worker.js', 'text/javascript'),
     });
     ffmpeg.on('log', ({ message }) => logger(message));
     

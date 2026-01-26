@@ -20,8 +20,7 @@ let state = {
 
 const logElement = document.getElementById('log');
 const logger = (msg) => {
-    alert(msg);
-    const div = document.createElement('div');
+    div = document.getElementById('log')
     div.textContent = `> ${msg}`;
     logElement.appendChild(div);
     logElement.scrollTop = logElement.scrollHeight;

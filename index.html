@@ -1,0 +1,107 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CodingFleet - LayerAudio Web</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/@ffmpeg/ffmpeg@0.12.10/dist/umd/ffmpeg.min.js"></script>
+    <script src="https://unpkg.com/@ffmpeg/util@0.12.1/dist/umd/index.js"></script>
+    <style>
+        body { background-color: #0f172a; color: #f8fafc; }
+        .glass { background: rgba(30, 41, 59, 0.7); backdrop-filter: blur(10px); border: 1px solid rgba(255,255,255,0.1); }
+        #log { font-family: 'Courier New', Courier, monospace; font-size: 0.8rem; }
+    </style>
+</head>
+<body class="p-4 md:p-10">
+    <div class="max-w-4xl mx-auto">
+        <header class="mb-8 text-center">
+            <h1 class="text-4xl font-bold text-blue-400 mb-2">LayerAudio Converter</h1>
+            <p class="text-slate-400">Advanced Audio Layering & AI Panning</p>
+        </header>
+
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <!-- Inputs Section -->
+            <div class="glass p-6 rounded-xl space-y-4">
+                <h2 class="text-xl font-semibold border-b border-slate-700 pb-2">Configuration</h2>
+                
+                <div>
+                    <label class="block text-sm mb-1">Select Audio Files</label>
+                    <input type="file" id="audioFiles" multiple accept="audio/*" class="w-full text-sm text-slate-400 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-blue-600 file:text-white hover:file:bg-blue-700">
+                </div>
+
+                <div class="grid grid-cols-2 gap-4">
+                    <div>
+                        <label class="block text-sm mb-1">Craziness (1-6642069)</label>
+                        <input type="number" id="crayzz" value="100" class="w-full bg-slate-800 border border-slate-600 rounded px-3 py-2">
+                    </div>
+                    <div>
+                        <label class="block text-sm mb-1">Surround Mode</label>
+                        <select id="panfull" class="w-full bg-slate-800 border border-slate-600 rounded px-3 py-2">
+                            <option value="mono">Mono (1)</option>
+                            <option value="stereo" selected>Stereo (2)</option>
+                            <option value="5.1">5.1 (6)</option>
+                            <option value="7.1">7.1 (8)</option>
+                            <option value="hexadecagonal">Hexadecagonal (16)</option>
+                            <option value="22.2">22.2 (24)</option>
+                        </select>
+                    </div>
+                </div>
+
+                <div class="grid grid-cols-2 gap-4">
+                    <div>
+                        <label class="block text-sm mb-1">Extension</label>
+                        <select id="extension" class="w-full bg-slate-800 border border-slate-600 rounded px-3 py-2">
+                            <option value="mp3">MP3</option>
+                            <option value="wav">WAV</option>
+                            <option value="flac">FLAC</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label class="block text-sm mb-1">Bitrate (kbps)</label>
+                        <input type="number" id="bitrate" value="192" class="w-full bg-slate-800 border border-slate-600 rounded px-3 py-2">
+                    </div>
+                </div>
+
+                <div class="flex items-center space-x-2">
+                    <input type="checkbox" id="loadAI" checked>
+                    <label for="loadAI" class="text-sm">Load AI Knowledge Base</label>
+                </div>
+
+                <button id="processBtn" class="w-full bg-green-600 hover:bg-green-700 text-white font-bold py-3 rounded-lg transition">
+                    START MIXING
+                </button>
+            </div>
+
+            <!-- Feedback & Logs -->
+            <div class="glass p-6 rounded-xl flex flex-col">
+                <h2 class="text-xl font-semibold border-b border-slate-700 pb-2 mb-4">Processing Log</h2>
+                <div id="log" class="flex-grow bg-black p-4 rounded overflow-y-auto max-h-[300px] mb-4 text-green-500">
+                    Ready to process...
+                </div>
+                
+                <div id="feedbackArea" class="hidden space-y-4 border-t border-slate-700 pt-4">
+                    <h3 class="text-blue-400 font-bold">Feedback Loop</h3>
+                    <div class="grid grid-cols-3 gap-2">
+                        <input type="number" id="bassdelta" placeholder="Bass Δ" class="bg-slate-800 border border-slate-600 rounded px-2 py-1 text-sm">
+                        <input type="number" id="trebledelta" placeholder="Treb Δ" class="bg-slate-800 border border-slate-600 rounded px-2 py-1 text-sm">
+                        <input type="number" id="volumedelta" placeholder="Vol Δ" class="bg-slate-800 border border-slate-600 rounded px-2 py-1 text-sm">
+                    </div>
+                    <div class="flex space-x-2">
+                        <button id="rememberBtn" class="flex-1 bg-purple-600 text-xs py-2 rounded">Remember AI</button>
+                        <button id="rerunBtn" class="flex-1 bg-blue-600 text-xs py-2 rounded">Rerun Mix</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div id="outputArea" class="mt-8 hidden glass p-6 rounded-xl text-center">
+            <h2 class="text-xl font-semibold mb-4">Result</h2>
+            <audio id="audioPlayer" controls class="w-full mb-4"></audio>
+            <a id="downloadLink" class="text-blue-400 underline">Download Processed File</a>
+        </div>
+    </div>
+
+    <script src="app.js"></script>
+</body>
+</html>

@@ -31,10 +31,9 @@ async function initFFmpeg() {
     ffmpeg = new FFmpeg();
     ffmpeg.on('log', ({ message }) => logger(message));
     
-    const baseURL = 'https://unpkg.com/@ffmpeg/core@0.12.6/dist/umd';
     await ffmpeg.load({
-        coreURL: await toBlobURL(`${baseURL}/ffmpeg-core.js`, 'text/javascript'),
-        wasmURL: await toBlobURL(`${baseURL}/ffmpeg-core.wasm`, 'application/wasm'),
+        coreURL: await toBlobURL(`ffmpeg-core.js`, 'text/javascript'),
+        wasmURL: await toBlobURL(`ffmpeg-core.wasm`, 'application/wasm'),
     });
 }
 

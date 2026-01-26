@@ -27,6 +27,7 @@ const logger = (msg) => {
 };
 
 async function initFFmpeg() {
+    await ffmpeg.load()
     if (ffmpeg!=null) return;
     ffmpeg = new FFmpeg();
     ffmpeg.on('log', ({ message }) => logger(message));

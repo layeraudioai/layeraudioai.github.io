@@ -22,8 +22,6 @@ const logElement = document.getElementById('log');
 const logger = (msg) => {
     div = document.getElementById('log')
     div.textContent = `> ${msg}`;
-    logElement.appendChild(div);
-    logElement.scrollTop = logElement.scrollHeight;
 };
 
 async function initFFmpeg() {

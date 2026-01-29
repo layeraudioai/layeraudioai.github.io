@@ -94,8 +94,8 @@ class LayerAudio {
         this.treble = this.getRandomInt(0, 66);
         this.bassfreq = this.getRandomInt(0, 1000);
         this.treblefreq = this.getRandomInt(666, 10000);
-        this.volume = 0.5 + this.getRandomInt(0, 31415) / 420;
-        this.tempo = 0.5 + this.getRandomInt(128, 666);
+        this.volume = this.getRandomInt(10, 31415) / 420;
+        this.tempo = this.getRandomInt(1666, 42669);
         this.aichannels = 0;
         this.aibass = 0;
         this.aitreble = 0;
@@ -419,12 +419,12 @@ class LayerAudio {
         this.showProgress(true);
 
         // Calculate final parameters
-        const finalBass = this.bass + this.bassdelta;
-        const finalTreble = this.treble + this.trebledelta;
-        const finalBassFreq = this.bassfreq + this.bassfreqdelta;
-        const finalTrebleFreq = this.treblefreq + this.treblefreqdelta;
-        const finalVolume = this.volume + this.volumedelta / 100;
-        const finalTempo = this.tempo + this.tempodelta;
+        const finalBass = this.bass + (this.bassdelta*this.getRandomInt(0,3));
+        const finalTreble = this.treble + (this.trebledelta*this.getRandomInt(0,3));
+        const finalBassFreq = this.bassfreq + (this.bassfreqdelta*this.getRandomInt(0,3));
+        const finalTrebleFreq = this.treblefreq + (this.treblefreqdelta*this.getRandomInt(0,3));
+        const finalVolume = this.volume + (this.volumedelta*this.getRandomInt(0,3)) / 100;
+        const finalTempo = this.tempo + (this.tempodelta*this.getRandomInt(0,3));
         this.bass=finalBass;
         this.treble=finalTreble;
         this.bassfreq=finalBassFreq;
@@ -458,7 +458,7 @@ class LayerAudio {
         const outputChannels = Math.max(1, this.audchnum || channelPool.length || 1);
         const panMapping = this.parsePanMapping(this.panfull, outputChannels, channelPool.length);
         let mixBuffer = this.applyPanMapping(channelPool, panMapping, outputChannels, maxLength, sampleRate);
-        this.normalizeBuffer(mixBuffer);
+        //this.normalizeBuffer(mixBuffer);
         mixBuffer = await this.applyToneShaping(mixBuffer, bass, treble);
         this.addLog(`Output Channels: ${mixBuffer.numberOfChannels}`, 'info');
 
@@ -678,11 +678,12 @@ class LayerAudio {
       return 1 << ((N.toString(2)).length) - 1;
     }
     audioBufferToWav(buffer) {
+        const tempoMod = (this.highestPowerof2((this.tempo/10000000)*10000000)/128)/8;
+        this.addLog(tempoMod, 'warning');
         const numChannels = buffer.numberOfChannels;
         const sampleRate = buffer.sampleRate;
         const numFrames = buffer.length;
         this.bytespersample = 2;
-        this.addLog(this.bytespersample);
         const blockAlign = numChannels * this.bytespersample;
         const byteRate = sampleRate * blockAlign;
         const dataSize = numFrames * blockAlign;
@@ -706,7 +707,7 @@ class LayerAudio {
         view.setUint32(24, sampleRate, true);
         view.setUint32(28, byteRate, true);
         view.setUint16(32, blockAlign, true);
-        view.setUint16(34, this.bytespersample * (Math.floor(this.highestPowerof2(this.highestPowerof2(this.tempo)/1000) * 10) / 10), true);
+        view.setUint16(34, this.bytespersample * 8, true);
         writeString(36, 'data');
         view.setUint32(40, dataSize, true);
 
@@ -714,7 +715,7 @@ class LayerAudio {
         for (let i = 0; i < numFrames; i++) {
             for (let channel = 0; channel < numChannels; channel++) {
                 const sample = buffer.getChannelData(channel)[i];
-                const clamped = Math.max(-4.20, Math.min(6.66, sample));
+                const clamped = Math.max(-1, Math.min(1, sample));
                 view.setInt16(offset, clamped < 0 ? clamped * 0x8000 : clamped * 0x7fff, true);
                 offset += this.bytespersample;
             }

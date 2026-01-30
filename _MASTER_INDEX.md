@@ -1,4 +1,4 @@
-# 🎵 LayerAudio - Master Index & Download Guide
+# 🎵 LayAI - Master Index & Download Guide
 
 ## ✅ CONVERSION COMPLETE!
 
@@ -100,14 +100,14 @@ Development server
 ```bash
 # 1. Download the 4 core files above
 
-# 2. Place in folder: layeraudio/
+# 2. Place in folder: layai/
 #    ├── index.html
 #    ├── styles.css
 #    ├── app.js
 #    └── server.py
 
 # 3. Start server
-cd layeraudio/
+cd layai/
 python3 server.py
 
 # 4. Open browser

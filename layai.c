@@ -36,7 +36,7 @@ typedef struct {
     int count;
 } PanChannel;
 
-// Structure for LayerAudio
+// Structure for LayAI
 typedef struct {
     bool running;
     int maxnum;
@@ -107,7 +107,7 @@ typedef struct {
     // Logging
     FILE *log_file;
     
-} LayerAudio;
+} LayAI;
 
 // Utility functions
 int gt_rnd(int min, int max) {
@@ -118,8 +118,8 @@ float gt_rnd_float(float min, float max) {
     return min + ((float)rand() / RAND_MAX) * (max - min);
 }
 
-// Initialize LayerAudio
-void layer_audio_init(LayerAudio *la) {
+// Initialize LayAI
+void layai_init(LayAI *la) {
     srand(time(NULL));
     
     la->running = false;
@@ -182,14 +182,14 @@ void layer_audio_init(LayerAudio *la) {
     la->output_channels = 0;
     
     // Open log file
-    la->log_file = fopen("layer_audio.log", "w");
+    la->log_file = fopen("layai.log", "w");
     if (la->log_file) {
-        fprintf(la->log_file, "LayerAudio initialized\n");
+        fprintf(la->log_file, "LayAI initialized\n");
     }
 }
 
 // Logging function
-void add_log(LayerAudio *la, const char *message, const char *type) {
+void add_log(LayAI *la, const char *message, const char *type) {
     time_t now = time(NULL);
     struct tm *t = localtime(&now);
     
@@ -256,7 +256,7 @@ AudioBuffer* load_wav_file(const char *filename) {
 }
 
 // Count songs in directory
-void count_songs(LayerAudio *la, const char *directory) {
+void count_songs(LayAI *la, const char *directory) {
     add_log(la, "STARTING THE SONG COUNT", "info");
     
     DIR *dir = opendir(directory);
@@ -301,7 +301,7 @@ void count_songs(LayerAudio *la, const char *directory) {
 }
 
 // Setup pan configuration
-void setup_pans(LayerAudio *la) {
+void setup_pans(LayAI *la) {
     add_log(la, "STARTING THE PAN SETUP", "info");
     
     // Initialize pan array
@@ -361,7 +361,7 @@ void setup_pans(LayerAudio *la) {
 }
 
 // Parse pan mapping
-PanChannel* parse_pan_mapping(LayerAudio *la, int output_channels, int pool_size) {
+PanChannel* parse_pan_mapping(LayAI *la, int output_channels, int pool_size) {
     PanChannel *channels = malloc(output_channels * sizeof(PanChannel));
     
     for (int i = 0; i < output_channels; i++) {
@@ -409,7 +409,7 @@ PanChannel* parse_pan_mapping(LayerAudio *la, int output_channels, int pool_size
 }
 
 // Apply pan mapping
-AudioBuffer* apply_pan_mapping(LayerAudio *la, float **channel_pool, int pool_size, 
+AudioBuffer* apply_pan_mapping(LayAI *la, float **channel_pool, int pool_size,
                                PanChannel *pan_channels, int output_channels, 
                                size_t max_length, int sample_rate) {
     (void)la; // Unused parameter
@@ -513,7 +513,7 @@ void normalize_buffer(AudioBuffer *buffer) {
 }
 
 // Build channel pool from audio buffers
-float** build_channel_pool(LayerAudio *la, size_t *max_length, int *sample_rate) {
+float** build_channel_pool(LayAI *la, size_t *max_length, int *sample_rate) {
     // Find maximum length
     *max_length = 0;
     for (int i = 0; i < la->song_count; i++) {
@@ -557,7 +557,7 @@ float** build_channel_pool(LayerAudio *la, size_t *max_length, int *sample_rate)
 }
 
 // Process audio mix
-AudioBuffer* process_audio(LayerAudio *la) {
+AudioBuffer* process_audio(LayAI *la) {
     add_log(la, "Processing audio mix...", "info");
     
     // Update parameters with random deltas
@@ -679,7 +679,7 @@ void write_wav_file(const char *filename, AudioBuffer *buffer) {
 }
 
 // Handle generate command
-void hdl_generate(LayerAudio *la) {
+void hdl_generate(LayAI *la) {
     if (!la->running) {
         add_log(la, "Not running", "error");
         return;
@@ -717,7 +717,7 @@ void hdl_generate(LayerAudio *la) {
 }
 
 // Handle remember command
-void hdl_remember(LayerAudio *la) {
+void hdl_remember(LayAI *la) {
     if (!la->running) {
         add_log(la, "Not running", "error");
         return;
@@ -743,7 +743,7 @@ void hdl_remember(LayerAudio *la) {
 }
 
 // Handle rerun command
-void hdl_rerun(LayerAudio *la) {
+void hdl_rerun(LayAI *la) {
     if (!la->running) {
         add_log(la, "Not running", "error");
         return;
@@ -764,14 +764,14 @@ void hdl_rerun(LayerAudio *la) {
 }
 
 // Handle stop command
-void hdl_stop(LayerAudio *la) {
+void hdl_stop(LayAI *la) {
     la->running = false;
     add_log(la, "Mixing session stopped", "warning");
     add_log(la, "COPYRIGHT FFMPEG & BRENDAN CARELL", "info");
 }
 
 // Load AI knowledge base
-void load_ai_knowledge_base(LayerAudio *la) {
+void load_ai_knowledge_base(LayAI *la) {
     // In a real implementation, this would load from a file
     // For now, we'll use the in-memory knowledge base
     
@@ -828,7 +828,7 @@ void load_ai_knowledge_base(LayerAudio *la) {
 }
 
 // Cleanup function
-void layer_audio_cleanup(LayerAudio *la) {
+void layai_cleanup(LayAI *la) {
     // Free audio buffers
     for (int i = 0; i < la->song_count; i++) {
         if (la->audio_buffers[i]) {
@@ -851,10 +851,10 @@ void layer_audio_cleanup(LayerAudio *la) {
 
 // Main function for testing
 int main(int argc, char *argv[]) {
-    LayerAudio la;
-    layer_audio_init(&la);
-    
-    printf("LayerAudio C Implementation\n");
+    LayAI la;
+    layai_init(&la);
+
+    printf("LayAI C Implementation\n");
     printf("===========================\n\n");
     
     if (argc < 2) {
@@ -899,9 +899,9 @@ int main(int argc, char *argv[]) {
     hdl_stop(&la);
     
     // Cleanup
-    layer_audio_cleanup(&la);
-    
-    printf("\nDone! Check layer_audio.log for details.\n");
+    layai_cleanup(&la);
+
+    printf("\nDone! Check layai.log for details.\n");
     
     return 0;
 }

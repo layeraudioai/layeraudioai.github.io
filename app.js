@@ -1,4 +1,4 @@
-// LayerAudio - Complete JavaScript Implementation
+// LayAI - Complete JavaScript Implementation
 
 // Browser-compatible MIDI Parser
 class MIDIParser {
@@ -204,7 +204,7 @@ class MIDIParser {
     }
 }
 
-class LayerAudio {
+class LayAI {
     constructor() {
         // State variables
         this.running = false;
@@ -330,8 +330,8 @@ class LayerAudio {
             this.volumedelta = parseInt(e.target.value);
             this.volumeValue.textContent = this.volumedelta;
         });
-        
-       this.tempoSlider.addEventListener('input', (e) => {
+
+        this.tempoSlider.addEventListener('input', (e) => {
             this.tempodelta = parseInt(e.target.value) / 100; // Convert to multiplier (50-200 -> 0.5-2.0)
             this.tempoValue.textContent = this.tempodelta.toFixed(2) + 'x';
         });
@@ -365,7 +365,7 @@ class LayerAudio {
             this.audioContext = new (window.AudioContext || window.webkitAudioContext)();
         }
 
-        this.addLog(`Starting LayerAudio with ${this.songs.length} song(s)`, 'info');
+        this.addLog(`Starting LayAI with ${this.songs.length} song(s)`, 'info');
         this.addLog(`Craziness Level: ${craziness}`, 'info');
         this.addLog(`Surround: ${surround} (${this.audchnum} channels)`, 'info');
         this.addLog(`Output Format: ${this.extension} @ ${bitrate}Kb/s`, 'info');
@@ -971,7 +971,7 @@ class LayerAudio {
     }
     
     loadAIKnowledgeBase() {
-        const stored = localStorage.getItem('layerAudio_knowledgeBase');
+        const stored = localStorage.getItem('layai_knowledgeBase');
         if (stored) {
             try {
                 this.knowledgeBase = JSON.parse(stored);
@@ -1032,7 +1032,7 @@ class LayerAudio {
     }
 
     loadKnowledgeBase() {
-        const stored = localStorage.getItem('layerAudio_knowledgeBase');
+        const stored = localStorage.getItem('layai_knowledgeBase');
         if (stored) {
             try {
                 this.knowledgeBase = JSON.parse(stored);
@@ -1043,7 +1043,7 @@ class LayerAudio {
     }
 
     saveKnowledgeBase() {
-        localStorage.setItem('layerAudio_knowledgeBase', JSON.stringify(this.knowledgeBase));
+        localStorage.setItem('layai_knowledgeBase', JSON.stringify(this.knowledgeBase));
     }
 
     addLog(message, type = 'info') {
@@ -1175,6 +1175,9 @@ class LayerAudio {
         // Render each track's notes as sine wave oscillators
         for (const track of midiParser.tracks) {
             for (const note of track.notes) {
+                // Skip notes with invalid timing
+                if (note.time < 0 || note.duration <= 0) continue;
+
                 const osc = offlineCtx.createOscillator();
                 // Use different waveforms based on note range for variety
                 if (note.midi < 48) {
@@ -1190,9 +1193,16 @@ class LayerAudio {
 
                 const gainNode = offlineCtx.createGain();
                 const noteVelocity = note.velocity * (note.midi >= 72 ? 0.3 : 0.5); // Reduce high note volume
+
+                // Ensure envelope times don't overlap for short notes
+                const attackTime = Math.min(0.01, note.duration * 0.1);
+                const releaseTime = Math.min(0.02, note.duration * 0.2);
+                const sustainStart = note.time + attackTime;
+                const sustainEnd = Math.max(sustainStart, note.time + note.duration - releaseTime);
+
                 gainNode.gain.setValueAtTime(0, note.time);
-                gainNode.gain.linearRampToValueAtTime(noteVelocity, note.time + 0.01); // Quick attack
-                gainNode.gain.setValueAtTime(noteVelocity, note.time + note.duration - 0.02);
+                gainNode.gain.linearRampToValueAtTime(noteVelocity, sustainStart); // Quick attack
+                gainNode.gain.setValueAtTime(noteVelocity, sustainEnd);
                 gainNode.gain.linearRampToValueAtTime(0, note.time + note.duration); // Release
 
                 osc.connect(gainNode).connect(offlineCtx.destination);
@@ -1242,5 +1252,5 @@ class LayerAudio {
 
 // Initialize the application when DOM is ready
 document.addEventListener('DOMContentLoaded', () => {
-    window.layerAudio = new LayerAudio();
+    window.layai = new LayAI();
 });

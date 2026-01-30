@@ -1,8 +1,8 @@
-# LayerAudio - Bash to HTML/CSS/JS Conversion Summary
+# LayAI - Bash to HTML/CSS/JS Conversion Summary
 
 ## ✅ Conversion Complete
 
-The entire LayerAudio Bash script has been successfully converted to a fully functional HTML/CSS/JavaScript web application.
+The entire LayAI Bash script has been successfully converted to a fully functional HTML/CSS/JavaScript web application.
 
 ---
 
@@ -91,7 +91,7 @@ done < "${PWD}/ai.knowledgebase"
 
 # Converted
 loadAIKnowledgeBase() {
-    const stored = localStorage.getItem('layerAudio_knowledgeBase');
+    const stored = localStorage.getItem('layai_knowledgeBase');
     if (stored) {
         this.knowledgeBase = JSON.parse(stored);
         for (let entry of this.knowledgeBase) {
@@ -256,7 +256,7 @@ addLog(message, type = 'info') {
 - Professional UI components
 
 ### 3. **app.js** (16 KB)
-- LayerAudio class with full implementation
+- LayAI class with full implementation
 - 40+ methods covering all functionality
 - Event listener management
 - Web Audio API integration
@@ -332,7 +332,7 @@ CSS (Styling)
   └─ Mobile optimization
 
 JavaScript (Logic)
-  ├─ LayerAudio Class
+  ├─ LayAI Class
   ├─ State management
   ├─ Event handling
   ├─ Web Audio API
@@ -474,7 +474,7 @@ All data stored in browser `localStorage`:
 
 ## ✨ Conclusion
 
-This conversion successfully transforms the Bash-based LayerAudio tool into a modern, fully-functional web application while preserving all core functionality and algorithms. The application is ready for production use and can be extended with additional features like:
+This conversion successfully transforms the Bash-based LayAI tool into a modern, fully-functional web application while preserving all core functionality and algorithms. The application is ready for production use and can be extended with additional features like:
 
 - Real FFmpeg backend integration
 - WebRTC audio streaming

@@ -1,13 +1,13 @@
 wip alpha 000000.0000000.1.1
 
 
-# LayerAudio - HTML/CSS/JS Conversion
+# LayAI - HTML/CSS/JS Conversion
 
 A complete web-based audio layering and mixing tool converted from Bash to HTML/CSS/JavaScript.
 
 ## Overview
 
-LayerAudio is an advanced audio mixing application that allows you to:
+LayAI is an advanced audio mixing application that allows you to:
 - Layer multiple audio files together
 - Apply bass, treble, and volume adjustments
 - Configure surround sound channeling (mono, stereo, 5.1, 7.1, hexadecagonal, 22.2)

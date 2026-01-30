@@ -1,4 +1,4 @@
-# LayerAudio - Deployment Guide
+# LayAI - Deployment Guide
 
 ## 📦 Quick Start
 
@@ -44,7 +44,7 @@ php -S localhost:3000
 
 ### File Structure
 ```
-/var/www/layeraudio/
+/var/www/layai/
 ├── index.html
 ├── styles.css
 ├── app.js
@@ -158,10 +158,10 @@ CMD ["python3", "server.py"]
 ### Build & Run
 ```bash
 # Build image
-docker build -t layeraudio .
+docker build -t layai .
 
 # Run container
-docker run -p 3000:3000 layeraudio
+docker run -p 3000:3000 layai
 
 # Or with docker-compose
 docker-compose up
@@ -172,7 +172,7 @@ docker-compose up
 version: '3.8'
 
 services:
-  layeraudio:
+  layai:
     build: .
     ports:
       - "3000:3000"
@@ -202,7 +202,7 @@ git commit -m "Initial commit"
 
 3. **Deploy**
 ```bash
-heroku create layeraudio
+heroku create layai
 git push heroku main
 ```
 
@@ -216,7 +216,7 @@ git push heroku main
 
 ```bash
 # Upload files
-aws s3 cp . s3://layeraudio-bucket/ --recursive
+aws s3 cp . s3://layai-bucket/ --recursive
 
 # Create CloudFront distribution
 # Point to S3 bucket origin
@@ -392,12 +392,12 @@ window.addEventListener('error', (event) => {
 ### Database Backups (Knowledge Base)
 ```javascript
 // Export knowledge base
-const kb = localStorage.getItem('layerAudio_knowledgeBase');
+const kb = localStorage.getItem('layai_knowledgeBase');
 console.save(kb, 'knowledge-base.json');
 
 // Import knowledge base
 const importedKB = JSON.parse(jsonData);
-localStorage.setItem('layerAudio_knowledgeBase', JSON.stringify(importedKB));
+localStorage.setItem('layai_knowledgeBase', JSON.stringify(importedKB));
 ```
 
 ---

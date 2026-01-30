@@ -121,12 +121,12 @@
                         <input type="range" id="volumeSlider" min="-42669" max="42669" value="0" class="slider">
                         <small>-42669 to 42669</small>
                     </div>
-                    
+
                     <div class="param-box">
                         <h3>Tempo</h3>
-                        <div class="param-value" id="tempoValue">0</div>
-                        <input type="range" id="tempoSlider" min="-420" max="420" value="0" class="slider">
-                        <small>-420 to 420</small>
+                        <div class="param-value" id="tempoValue">1.00x</div>
+                        <input type="range" id="tempoSlider" min="50" max="200" value="100" step="1" class="slider">
+                        <small>0.5x to 2.0x speed</small>
                     </div>
                 </div>
                 <div class="control-buttons">
@@ -164,7 +164,7 @@
             </div></h4>
             <p>COPYRIGHT FFMPEG & BRENDAN CARELL 2026</p>
             <p>LayerAudio - Advanced Audio Mixing Tool</p>
-            <small>Currently exports are WAV only, but surround sound up to 22.2 does work. Tempo, bitrate, midi currently do nothing. Suggestions and questions can go to bscarell@gmail.com</small>
+            <small>Currently exports are WAV only by default, but other formats available via FFmpeg. Surround sound up to 22.2 does work. Suggestions and questions can go to bscarell@gmail.com</small>
             <input type="file" id="midiFileInput" accept=".mid,.midi">
             <button id="convertBtn">Convert midi to WAV</button>
             <a id="downloadLink" style="display:none;">Download WAV</a>

@@ -1,78 +1,206 @@
 // LayerAudio - Complete JavaScript Implementation
-class MIDI {
-    constructor(filePath = null) {
-        this.filePath = document.getElementById("midiFileInput").files[0];
-        this.midiData = null; // Parsed MIDI JSON structure
+
+// Browser-compatible MIDI Parser
+class MIDIParser {
+    constructor() {
+        this.tracks = [];
+        this.duration = 0;
+        this.ticksPerBeat = 480;
+        this.tempo = 500000; // Default 120 BPM in microseconds per beat
     }
 
-    /**
-     * Loads and parses a MIDI file from disk.
-     * @param {string} filePath - Path to the MIDI file.
-     */
-    load(filePath) {
-       if (!filePath || typeof filePath !== 'string') {
-         this.addLog("Invalid file path.", 'error');
-       }
-       this.filePath = filePath;
-       const fileBuffer = fs.readFileSync(filePath);
-       this.midiData = parseMidi(fileBuffer);
-       this.addLog("MIDI file loaded: ${filePath}", 'success');
-       return midiData; 
-    }
+    async loadFromArrayBuffer(arrayBuffer) {
+        const data = new Uint8Array(arrayBuffer);
+        let offset = 0;
 
-
-    /**
-     * Returns the parsed MIDI data.
-     * @returns {object|null} Parsed MIDI JSON or null if not loaded.
-     */
-    getData() {
-       if (!this.midiData) {
-            this.addLog("No MIDI data loaded.", 'error');
-            return;
-       }
-       return;
-       return this.midiData;
-    }
-
-    /**
-     * Saves the current MIDI data to a file.
-     * @param {string} outputPath - Path to save the MIDI file.
-     */
-    save(outputPath) {
-         if (!this.midiData) {
-                this.addLog("No MIDI data to save.", 'warning');
-         }
-         const outputBuffer = Buffer.from(writeMidi(this.midiData));
-         fs.writeFileSync(outputPath, outputBuffer);
-         this.addLog("MIDI file saved: ${outputPath}", 'success');
-         return;
-    }
-
-    /**
-     * Lists all note events in the MIDI file.
-     */
-    listNotes() {
-        if (!this.midiData) {
-            this.addLog("No MIDI data loaded.'", 'error');
-            return;
+        // Read header chunk
+        const headerChunk = this.readString(data, offset, 4);
+        if (headerChunk !== 'MThd') {
+            throw new Error('Invalid MIDI file: Missing MThd header');
         }
-        //this.midiData.tracks.forEach((track, trackIndex) => {
-        //    console.log(`Track ${trackIndex + 1}:`);
-        //    track.forEach(event => {
-        //        if (event.type === 'noteOn' || event.type === 'noteOff') {
-        //            this.addLog("  ${event.type} - Note: ${event.noteNumber}, Velocity: ${event.velocity}, Delta: ${event.deltaTime}", 'success');
-        //        }
-        //    });
-        //);
+        offset += 4;
+
+        const headerLength = this.readUint32(data, offset);
+        offset += 4;
+
+        const format = this.readUint16(data, offset);
+        offset += 2;
+
+        const numTracks = this.readUint16(data, offset);
+        offset += 2;
+
+        this.ticksPerBeat = this.readUint16(data, offset);
+        offset += 2;
+
+        // Skip any extra header bytes
+        offset += headerLength - 6;
+
+        // Read track chunks
+        this.tracks = [];
+        for (let t = 0; t < numTracks; t++) {
+            const trackChunk = this.readString(data, offset, 4);
+            if (trackChunk !== 'MTrk') {
+                throw new Error('Invalid MIDI file: Missing MTrk header');
+            }
+            offset += 4;
+
+            const trackLength = this.readUint32(data, offset);
+            offset += 4;
+
+            const trackEnd = offset + trackLength;
+            const track = { notes: [], events: [] };
+            let currentTime = 0;
+            let runningStatus = 0;
+            const activeNotes = {};
+
+            while (offset < trackEnd) {
+                const deltaTime = this.readVariableLength(data, offset);
+                offset = deltaTime.newOffset;
+                currentTime += deltaTime.value;
+
+                let statusByte = data[offset];
+                if (statusByte < 0x80) {
+                    // Running status
+                    statusByte = runningStatus;
+                } else {
+                    offset++;
+                    if (statusByte < 0xF0) {
+                        runningStatus = statusByte;
+                    }
+                }
+
+                const eventType = statusByte & 0xF0;
+                const channel = statusByte & 0x0F;
+
+                if (eventType === 0x90) {
+                    // Note On
+                    const note = data[offset++];
+                    const velocity = data[offset++];
+                    if (velocity > 0) {
+                        activeNotes[`${channel}-${note}`] = {
+                            midi: note,
+                            velocity: velocity / 127,
+                            startTick: currentTime,
+                            channel
+                        };
+                    } else {
+                        // Note On with velocity 0 = Note Off
+                        this.endNote(track, activeNotes, channel, note, currentTime);
+                    }
+                } else if (eventType === 0x80) {
+                    // Note Off
+                    const note = data[offset++];
+                    offset++; // velocity (ignored for note off)
+                    this.endNote(track, activeNotes, channel, note, currentTime);
+                } else if (eventType === 0xA0 || eventType === 0xB0 || eventType === 0xE0) {
+                    // Polyphonic Pressure, Control Change, Pitch Bend (2 data bytes)
+                    offset += 2;
+                } else if (eventType === 0xC0 || eventType === 0xD0) {
+                    // Program Change, Channel Pressure (1 data byte)
+                    offset += 1;
+                } else if (statusByte === 0xFF) {
+                    // Meta event
+                    const metaType = data[offset++];
+                    const metaLength = this.readVariableLength(data, offset);
+                    offset = metaLength.newOffset;
+
+                    if (metaType === 0x51 && metaLength.value === 3) {
+                        // Tempo
+                        this.tempo = (data[offset] << 16) | (data[offset + 1] << 8) | data[offset + 2];
+                    }
+                    offset += metaLength.value;
+                } else if (statusByte === 0xF0 || statusByte === 0xF7) {
+                    // SysEx
+                    const sysexLength = this.readVariableLength(data, offset);
+                    offset = sysexLength.newOffset + sysexLength.value;
+                } else {
+                    // Unknown event, try to skip
+                    break;
+                }
+            }
+
+            // End any remaining active notes
+            for (const key in activeNotes) {
+                const noteData = activeNotes[key];
+                track.notes.push({
+                    midi: noteData.midi,
+                    velocity: noteData.velocity,
+                    time: this.ticksToSeconds(noteData.startTick),
+                    duration: this.ticksToSeconds(currentTime - noteData.startTick)
+                });
+            }
+
+            this.tracks.push(track);
+            offset = trackEnd;
+        }
+
+        // Calculate total duration
+        this.duration = 0;
+        for (const track of this.tracks) {
+            for (const note of track.notes) {
+                const endTime = note.time + note.duration;
+                if (endTime > this.duration) {
+                    this.duration = endTime;
+                }
+            }
+        }
+
+        return this;
     }
+
+    endNote(track, activeNotes, channel, note, currentTime) {
+        const key = `${channel}-${note}`;
+        if (activeNotes[key]) {
+            const noteData = activeNotes[key];
+            track.notes.push({
+                midi: noteData.midi,
+                velocity: noteData.velocity,
+                time: this.ticksToSeconds(noteData.startTick),
+                duration: this.ticksToSeconds(currentTime - noteData.startTick)
+            });
+            delete activeNotes[key];
+        }
+    }
+
+    ticksToSeconds(ticks) {
+        return (ticks / this.ticksPerBeat) * (this.tempo / 1000000);
+    }
+
+    readString(data, offset, length) {
+        let str = '';
+        for (let i = 0; i < length; i++) {
+            str += String.fromCharCode(data[offset + i]);
+        }
+        return str;
+    }
+
+    readUint32(data, offset) {
+        return (data[offset] << 24) | (data[offset + 1] << 16) | (data[offset + 2] << 8) | data[offset + 3];
+    }
+
+    readUint16(data, offset) {
+        return (data[offset] << 8) | data[offset + 1];
+    }
+
+    readVariableLength(data, offset) {
+        let value = 0;
+        let byte;
+        do {
+            byte = data[offset++];
+            value = (value << 7) | (byte & 0x7F);
+        } while (byte & 0x80);
+        return { value, newOffset: offset };
+    }
+
     addLog(message, type = 'info') {
-        this.logOutput = document.getElementById('logOutput');
+        const logOutput = document.getElementById('logOutput');
+        if (!logOutput) return;
         const line = document.createElement('div');
         line.className = `log-line ${type}`;
         const timestamp = new Date().toLocaleTimeString();
         line.textContent = `[${timestamp}] ${message}`;
-        this.logOutput.appendChild(line);
-        this.logOutput.scrollTop = this.logOutput.scrollHeight;
+        logOutput.appendChild(line);
+        logOutput.scrollTop = logOutput.scrollHeight;
     }
 }
 
@@ -89,13 +217,13 @@ class LayerAudio {
         this.bassfreqdelta = 0;
         this.treblefreqdelta = 0;
         this.volumedelta = 0;
-        this.tempodelta = 0;
+        this.tempodelta = 1.0; // Tempo multiplier delta (starts at 1.0x = normal speed)
         this.bass = this.getRandomInt(0, 166);
         this.treble = this.getRandomInt(0, 66);
         this.bassfreq = this.getRandomInt(0, 1000);
         this.treblefreq = this.getRandomInt(666, 10000);
         this.volume = this.getRandomInt(10, 31415) / 420;
-        this.tempo = this.getRandomInt(1666, 42669);
+        this.tempo = 1.0; // Tempo multiplier (0.5 = half speed, 2.0 = double speed)
         this.aichannels = 0;
         this.aibass = 0;
         this.aitreble = 0;
@@ -204,8 +332,8 @@ class LayerAudio {
         });
         
        this.tempoSlider.addEventListener('input', (e) => {
-            this.tempodelta = parseInt(e.target.value);
-            this.tempoValue.textContent = this.tempodelta;
+            this.tempodelta = parseInt(e.target.value) / 100; // Convert to multiplier (50-200 -> 0.5-2.0)
+            this.tempoValue.textContent = this.tempodelta.toFixed(2) + 'x';
         });
     }
 
@@ -414,7 +542,7 @@ class LayerAudio {
 
         this.resetDownload();
         const datetime = new Date().toISOString().replace(/[:.]/g, '');
-        
+
         this.addLog('Generating audio mix...', 'info');
         this.showProgress(true);
 
@@ -424,14 +552,15 @@ class LayerAudio {
         const finalBassFreq = this.bassfreq + (this.bassfreqdelta*this.getRandomInt(0,3));
         const finalTrebleFreq = this.treblefreq + (this.treblefreqdelta*this.getRandomInt(0,3));
         const finalVolume = this.volume + (this.volumedelta*this.getRandomInt(0,3)) / 100;
-        const finalTempo = this.tempo + (this.tempodelta*this.getRandomInt(0,3));
+        // Tempo is now a multiplier (0.5-2.0), use tempodelta directly if set, otherwise default
+        const finalTempo = this.tempodelta > 0 ? this.tempodelta : this.tempo;
         this.bass=finalBass;
         this.treble=finalTreble;
         this.bassfreq=finalBassFreq;
         this.treblefreq=finalTrebleFreq;
         this.volume=finalVolume;
         this.tempo=finalTempo;
-        this.addLog(`Bass: ${finalBass}, Treble: ${finalTreble}, Bass Frequency: ${finalBassFreq}, Treble Frequency: ${finalTrebleFreq}, Volume: ${finalVolume}, Tempo: ${finalTempo}`, 'info');
+        this.addLog(`Bass: ${finalBass}, Treble: ${finalTreble}, Bass Frequency: ${finalBassFreq}, Treble Frequency: ${finalTrebleFreq}, Volume: ${finalVolume}, Tempo: ${finalTempo.toFixed(2)}x`, 'info');
         this.addLog(`Pan Config: ${this.panfull}`, 'info');
 
         try {
@@ -465,6 +594,11 @@ class LayerAudio {
         const volumeScale = Math.max(0, volume / 100);
         if (volumeScale !== 1) {
             this.applyGain(mixBuffer, volumeScale);
+        }
+
+        // Apply tempo adjustment for WAV output (FFmpeg handles tempo for other formats)
+        if (this.extension === 'wav' && this.tempo !== 1.0) {
+            mixBuffer = await this.applyTempo(mixBuffer, this.tempo);
         }
 
         const { blob, extension, mimeType } = await this.encodeMix(mixBuffer);
@@ -603,6 +737,43 @@ class LayerAudio {
         }
     }
 
+    async applyTempo(buffer, tempo) {
+        // If tempo is 1.0 (normal speed), no change needed
+        if (Math.abs(tempo - 1.0) < 0.01) {
+            return buffer;
+        }
+
+        // Clamp tempo to valid range
+        const validTempo = Math.max(0.5, Math.min(2.0, tempo));
+
+        // Calculate new length based on tempo
+        const newLength = Math.floor(buffer.length / validTempo);
+        const numChannels = buffer.numberOfChannels;
+        const sampleRate = buffer.sampleRate;
+
+        // Create new buffer with adjusted length
+        const newBuffer = this.audioContext.createBuffer(numChannels, newLength, sampleRate);
+
+        // Use linear interpolation for time stretching (simple but effective)
+        for (let channel = 0; channel < numChannels; channel++) {
+            const inputData = buffer.getChannelData(channel);
+            const outputData = newBuffer.getChannelData(channel);
+
+            for (let i = 0; i < newLength; i++) {
+                const srcIndex = i * validTempo;
+                const srcIndexFloor = Math.floor(srcIndex);
+                const srcIndexCeil = Math.min(srcIndexFloor + 1, buffer.length - 1);
+                const fraction = srcIndex - srcIndexFloor;
+
+                // Linear interpolation between samples
+                outputData[i] = inputData[srcIndexFloor] * (1 - fraction) + inputData[srcIndexCeil] * fraction;
+            }
+        }
+
+        this.addLog(`Tempo adjusted: ${validTempo.toFixed(2)}x (${newLength} samples)`, 'info');
+        return newBuffer;
+    }
+
     async encodeMix(buffer) {
         const wavBlob = this.audioBufferToWav(buffer);
         if (this.extension === 'wav') {
@@ -649,17 +820,22 @@ class LayerAudio {
     }
 
     buildFfmpegArgs(inputName, outputName, extension, bitrate, tempo) {
+        // Ensure tempo is within valid range for atempo filter (0.5 to 2.0)
+        const validTempo = Math.max(0.5, Math.min(2.0, tempo));
+        // Only apply atempo filter if tempo is not 1.0 (no change)
+        const tempoFilter = Math.abs(validTempo - 1.0) > 0.01 ? ['-af', `atempo=${validTempo.toFixed(2)}`] : [];
+
         switch (extension) {
             case 'mp3':
-                return ['-i', inputName, '-q', '0', '-lossless', 'true','-filter_complex:a', `atempo=${tempo}`, '-codec:a', 'libmp3lame', '-b:a', `${bitrate}k`, outputName];
+                return ['-i', inputName, ...tempoFilter, '-codec:a', 'libmp3lame', '-b:a', `${bitrate}k`, outputName];
             case 'opus':
-                return ['-i', inputName, '-q', '0', '-lossless', 'true', '-filter_complex:a', `atempo=${tempo}`, '-c:a', 'libopus', '-b:a', `${bitrate}k`, '-vbr', 'on', outputName];
+                return ['-i', inputName, ...tempoFilter, '-c:a', 'libopus', '-b:a', `${bitrate}k`, '-vbr', 'on', outputName];
             case 'flac':
-                return ['-i', inputName, '-q', '0', '-lossless', 'true', '-filter_complex:a', `atempo=${tempo}`, '-c:a', 'flac', '-compression_level', '0', outputName];
+                return ['-i', inputName, ...tempoFilter, '-c:a', 'flac', '-compression_level', '0', outputName];
             case 'wv':
-                return ['-i', inputName, '-q', '0', '-lossless', 'true', '-filter_complex:a', `atempo=${tempo}`, '-c:a', 'wavpack', outputName];
+                return ['-i', inputName, ...tempoFilter, '-c:a', 'wavpack', outputName];
             default:
-                return ['-i', inputName, '-q', '0', '-lossless', 'true','-filter_complex:a', `atempo=${tempo}`,  outputName];
+                return ['-i', inputName, ...tempoFilter, outputName];
         }
     }
 
@@ -754,20 +930,20 @@ class LayerAudio {
         this.bassFreqSlider.value = 0;
         this.trebleFreqSlider.value = 0;
         this.volumeSlider.value = 0;
-        this.tempoSlider.value = 0;
+        this.tempoSlider.value = 100;
         this.bassdelta = 0;
         this.trebledelta = 0;
         this.bassfreqdelta = 0;
         this.treblefreqdelta = 0;
         this.volumedelta = 0;
-        this.tempodelta = 0 ;
+        this.tempodelta = 1.0;
         this.bassValue.textContent = '0';
         this.trebleValue.textContent = '0';
         this.bassFreqValue.textContent = '0';
         this.trebleFreqValue.textContent = '0';
         this.volumeValue.textContent = '0';
-        this.tempoValue.textContent = '0';
-        
+        this.tempoValue.textContent = '1.00x';
+
         // Regenerate pan configuration
         this.setupPans();
         this.addLog('New mix configuration generated', 'info');
@@ -808,7 +984,8 @@ class LayerAudio {
                     aibassfreq += entry.bassfreq;
                     aitreblefreq += entry.treblefreq;
                     aivolume += entry.volume;
-                    aitempo += entry.tempo;
+                    // Handle both old (large integer) and new (0.5-2.0) tempo formats
+                    aitempo += (entry.tempo > 10 ? 1.0 : entry.tempo);
                     aimaxnum += entry.maxnum;
                 }
 
@@ -841,12 +1018,13 @@ class LayerAudio {
                 this.volume = Math.floor(
                     (this.getRandomInt(-2, 2) - this.getRandomInt(-5, 5)) + this.aivolume
                 );
-                this.tempo = Math.floor(
-                    (this.getRandomInt(-6, 6) - this.getRandomInt(-3, 3)) + this.aitempo
-                );
+                // Tempo is now a multiplier (0.5-2.0), apply small variance
+                this.tempo = Math.max(0.5, Math.min(2.0,
+                    this.aitempo + (this.getRandomInt(-10, 10) / 100)
+                ));
 
                 this.addLog('AI Knowledge Base loaded successfully', 'success');
-                this.addLog(`Average Bass: ${this.bass.toFixed(4)}, Treble: ${this.treble.toFixed(4)},  Bass Frequency: ${this.bassfreq.toFixed(4)}, Treble Frequency: ${this.treblefreq.toFixed(4)}, Volume: ${this.volume.toFixed(4)}, Tempo: ${this.tempo.toFixed(4)}`, 'info');
+                this.addLog(`Average Bass: ${this.bass.toFixed(4)}, Treble: ${this.treble.toFixed(4)},  Bass Frequency: ${this.bassfreq.toFixed(4)}, Treble Frequency: ${this.treblefreq.toFixed(4)}, Volume: ${this.volume.toFixed(4)}, Tempo: ${this.tempo.toFixed(2)}x`, 'info');
             } catch (e) {
                 this.addLog('Error loading Knowledge Base: ' + e.message, 'error');
             }
@@ -981,57 +1159,84 @@ class LayerAudio {
         URL.revokeObjectURL(url);
     }
 
-    midiToWav(midiArrayBuffer) {
-      // Parse MIDI
-      const midi = new MIDI(midiArrayBuffer);
+    async midiToWav(midiArrayBuffer) {
+        // Parse MIDI using our browser-compatible parser
+        const midiParser = new MIDIParser();
+        await midiParser.loadFromArrayBuffer(midiArrayBuffer);
 
-      // Create offline audio context for rendering
-      const sampleRate = 44100;
-      const duration = midi.duration + 1; // extra second for tail
-      const offlineCtx = new OfflineAudioContext(2, sampleRate * duration, sampleRate);
+        this.addLog(`MIDI loaded: ${midiParser.tracks.length} tracks, duration: ${midiParser.duration.toFixed(2)}s`, 'info');
 
-      // Load a basic synth for each track
-      //midi.tracks.forEach(track => {
-      //  track.notes.forEach(note => {
-      //    const osc = offlineCtx.createOscillator();
-      //    osc.type = "sine"; // simple sine wave
-      //    osc.frequency.value = 440 * Math.pow(2, (note.midi - 69) / 12);
+        // Create offline audio context for rendering
+        const sampleRate = 44100;
+        const duration = Math.max(midiParser.duration + 1, 2); // At least 2 seconds
+        const offlineCtx = new OfflineAudioContext(2, sampleRate * duration, sampleRate);
 
-      //   const gain = offlineCtx.createGain();
-      //    gain.gain.setValueAtTime(note.velocity, note.time);
-      //    gain.gain.linearRampToValueAtTime(0, note.time + note.duration);
+        let noteCount = 0;
+        // Render each track's notes as sine wave oscillators
+        for (const track of midiParser.tracks) {
+            for (const note of track.notes) {
+                const osc = offlineCtx.createOscillator();
+                // Use different waveforms based on note range for variety
+                if (note.midi < 48) {
+                    osc.type = 'triangle'; // Bass notes
+                } else if (note.midi < 72) {
+                    osc.type = 'sine'; // Mid-range
+                } else {
+                    osc.type = 'square'; // High notes (with lower gain)
+                }
 
-      //    osc.connect(gain).connect(offlineCtx.destination);
-      //    osc.start(note.time);
-      //    osc.stop(note.time + note.duration);
-      //  });
-      //});
+                // Convert MIDI note number to frequency
+                osc.frequency.value = 440 * Math.pow(2, (note.midi - 69) / 12);
 
-      // Render to audio buffer
-      const renderedBuffer = offlineCtx.startRendering();
+                const gainNode = offlineCtx.createGain();
+                const noteVelocity = note.velocity * (note.midi >= 72 ? 0.3 : 0.5); // Reduce high note volume
+                gainNode.gain.setValueAtTime(0, note.time);
+                gainNode.gain.linearRampToValueAtTime(noteVelocity, note.time + 0.01); // Quick attack
+                gainNode.gain.setValueAtTime(noteVelocity, note.time + note.duration - 0.02);
+                gainNode.gain.linearRampToValueAtTime(0, note.time + note.duration); // Release
 
-      // Convert to WAV
-      return audioBufferToWav(renderedBuffer);
+                osc.connect(gainNode).connect(offlineCtx.destination);
+                osc.start(note.time);
+                osc.stop(note.time + note.duration);
+                noteCount++;
+            }
+        }
+
+        this.addLog(`Rendering ${noteCount} notes...`, 'info');
+
+        // Render to audio buffer
+        const renderedBuffer = await offlineCtx.startRendering();
+
+        // Convert to WAV using the existing method
+        return this.audioBufferToWav(renderedBuffer);
     }
 
 
-    handleConvert() {
-      const fileInput = document.getElementById("midiFileInput");
-      const convertBtn = document.getElementById("convertBtn");
-      const downloadLink = document.getElementById("downloadLink");
-        
-      if (!fileInput.files.length) {
-        this.addLog("Please select a MIDI file first.", 'error');
-        return;
-      }
-      const midiBuffer = fileInput.files[0].arrayBuffer();
-      const wavBlob = midiToWav(midiBuffer);
+    async handleConvert() {
+        const fileInput = document.getElementById("midiFileInput");
+        const downloadLink = document.getElementById("downloadLink");
 
-      // Create download link
-      downloadLink.href = URL.createObjectURL(wavBlob);
-      downloadLink.download = "output.wav";
-      downloadLink.style.display = "inline";
-      downloadLink.textContent = "Download WAV";
+        if (!fileInput.files.length) {
+            this.addLog("Please select a MIDI file first.", 'error');
+            return;
+        }
+
+        this.addLog("Converting MIDI to WAV...", 'info');
+        downloadLink.style.display = "none";
+
+        try {
+            const midiBuffer = await fileInput.files[0].arrayBuffer();
+            const wavBlob = await this.midiToWav(midiBuffer);
+
+            // Create download link
+            downloadLink.href = URL.createObjectURL(wavBlob);
+            downloadLink.download = fileInput.files[0].name.replace(/\.(mid|midi)$/i, '.wav') || "output.wav";
+            downloadLink.style.display = "inline";
+            downloadLink.textContent = "Download WAV";
+            this.addLog("MIDI conversion complete! Click 'Download WAV' to save.", 'success');
+        } catch (error) {
+            this.addLog(`MIDI conversion failed: ${error.message}`, 'error');
+        }
     }
 }    
 

@@ -623,7 +623,7 @@ class LayAI {
             this.applyGain(mixBuffer, volumeScale);
         }
 
-        // Apply tempo adjustment for WAV output (FFmpeg handles tempo for other formats)
+         // Apply tempo adjustment for WAV output 
         mixBuffer = await this.applyTempo(mixBuffer, this.tempo);
         const { blob, extension, mimeType } = await this.encodeMix(mixBuffer);
         this.mixMimeType = mimeType;
@@ -811,8 +811,6 @@ class LayAI {
     }
 
     audioBufferToWav(buffer) {
-        const tempoMod = this.highestPowerof2((this.tempo/10000000)*10000000);
-        this.addLog(tempoMod, 'warning');
         const numChannels = buffer.numberOfChannels;
         const sampleRate = buffer.sampleRate;
         const numFrames = buffer.length;

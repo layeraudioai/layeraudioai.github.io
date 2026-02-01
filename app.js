@@ -873,7 +873,7 @@ class LayAI {
         let off=offset;
         for (let i = 0; i < numFrames; i++) {
             for (let channel = 0; channel < numChannels; channel++) {
-                const sample = buffer.getChannelData(channel)[i%this.sampleValue];
+                const sample = buffer.getChannelData(channel)[i+this.getRandomInt(-this.sampleValue,this.sampleValue)];
                 const clamped = Math.max(-1, Math.min(1, sample));
                 view.setInt16(off, clamped < 0 ? clamped * 0x8000 : clamped * 0x7fff, true);
                 off += this.bytespersample;

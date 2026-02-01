@@ -851,7 +851,7 @@ class LayAI {
         else if (this.sampleValue>-1)
         {
             this.addLog(`Generating Sample: ${this.sampleValue}`, 'success');
-            this.getSample(buffer, view, 44);           
+            this.getSample(buffer, view, numFrames, numChannels, 44);           
         } 
         else this.useSamples(buffer, view, numFrames, numChannels, 44);
         return new Blob([arrayBuffer], { type: 'audio/wav' });

@@ -291,7 +291,6 @@ class LayAI {
         this.updateOutputFormatOptions();
         this.loadKnowledgeBase();
         this.resetDownload();
-        this.ffmpeg = null;
         this.fetchFile = null;
     }
 
@@ -575,6 +574,22 @@ class LayAI {
         }
     }
 
+    async encodeMix(buffer) {
+        const wavBlob = this.audioBufferToWav(buffer);
+        if (this.extension === 'wav') {
+            return { blob: wavBlob, extension: 'wav', mimeType: 'audio/wav' };
+        }
+        if (this.extension === 'mp3') {
+            return { blob: wavBlob, extension: 'mp3', mimeType: 'audio/mpeg' };
+        }
+        if (this.extension === 'flac') {
+            return { blob: wavBlob, extension: 'flac', mimeType: 'audio/flac' };
+        }
+        if (this.extension === 'wv') {
+            return { blob: wavBlob, extension: 'wv', mimeType: 'audio/wavpack' };
+        }
+    }
+
     async processAudio(bass, treble, volume) {
         if (!this.audioBuffers.length) {
             throw new Error('No audio buffers available to mix');
@@ -596,7 +611,7 @@ class LayAI {
             this.applyGain(mixBuffer, volumeScale);
         }
 
-        // Apply tempo adjustment for WAV output (FFmpeg handles tempo for other formats)
+        // Apply tempo adjustment for WAV output 
         if (this.tempo !== 1.0) {
             mixBuffer = await this.applyTempo(mixBuffer, this.tempo);
         }
@@ -774,71 +789,6 @@ class LayAI {
         return newBuffer;
     }
 
-    async encodeMix(buffer) {
-        const wavBlob = this.audioBufferToWav(buffer);
-        if (this.extension === 'wav') {
-            return { blob: wavBlob, extension: 'wav', mimeType: 'audio/wav' };
-        }
-
-        try {
-            const ffmpeg = await this.loadFfmpeg();
-            const inputName = 'input.wav';
-            const outputName = `output.${this.extension}`;
-            ffmpeg.FS('writeFile', inputName, await this.fetchFile(wavBlob));
-
-            const bitrate = this.getExportBitrate();
-            const args = this.buildFfmpegArgs(inputName, outputName, this.extension, bitrate, this.tempo);
-            await ffmpeg.run(...args);
-
-            const data = ffmpeg.FS('readFile', outputName);
-            ffmpeg.FS('unlink', inputName);
-            ffmpeg.FS('unlink', outputName);
-            const mimeType = this.getMimeType(this.extension);
-            const blob = new Blob([data.buffer], { type: mimeType });
-            return { blob, extension: this.extension, mimeType };
-        } catch (error) {
-            this.addLog(`Encoding to ${this.extension} failed. Falling back to WAV. (${error.message})`, 'warning');
-            return { blob: wavBlob, extension: 'wav', mimeType: 'audio/wav' };
-        }
-    }
-
-    async loadFfmpeg() {
-        if (this.ffmpeg) return this.ffmpeg;
-        this.addLog('Loading export encoder (first run only)...', 'info');
-
-        const module = await import('index.js');
-        const { createFFmpeg, fetchFile } = module;
-        const ffmpeg = createFFmpeg({
-            log: false,
-            corePath: 'ffmpeg-core.js'
-        });
-
-        await ffmpeg.load();
-        this.ffmpeg = ffmpeg;
-        this.fetchFile = fetchFile;
-        return ffmpeg;
-    }
-
-    buildFfmpegArgs(inputName, outputName, extension, bitrate, tempo) {
-        // Ensure tempo is within valid range for atempo filter (0.5 to 2.0)
-        const validTempo = Math.max(0.05, Math.min(15.0, tempo));
-        // Only apply atempo filter if tempo is not 1.0 (no change)
-        const tempoFilter = Math.abs(validTempo - 1.0) > 0.01 ? ['-af', `atempo=${validTempo.toFixed(2)}`] : [];
-
-        switch (extension) {
-            case 'mp3':
-                return ['-i', inputName, ...tempoFilter, '-codec:a', 'libmp3lame', '-b:a', `${bitrate}k`, outputName];
-            case 'opus':
-                return ['-i', inputName, ...tempoFilter, '-c:a', 'libopus', '-b:a', `${bitrate}k`, '-vbr', 'on', outputName];
-            case 'flac':
-                return ['-i', inputName, ...tempoFilter, '-c:a', 'flac', '-compression_level', '0', outputName];
-            case 'wv':
-                return ['-i', inputName, ...tempoFilter, '-c:a', 'wavpack', outputName];
-            default:
-                return ['-i', inputName, ...tempoFilter, outputName];
-        }
-    }
-
     getExportBitrate() {
         const bitrate = Number.parseInt(this.bitrate, 10);
         if (!Number.isFinite(bitrate)) return 192;
@@ -957,7 +907,7 @@ class LayAI {
         this.mixingSection.classList.remove('active');
         this.resetDownload();
         this.addLog('Mixing session stopped', 'warning');
-        this.addLog('COPYRIGHT FFMPEG & BRENDAN CARELL', 'info');
+        this.addLog('COPYRIGHT BRENDAN CARELL', 'info');
         
         // Reset form
         //document.getElementById('songInput').value = '';

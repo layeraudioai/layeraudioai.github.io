@@ -148,7 +148,7 @@ class MIDIParser {
         return this;
     }
 
-    async endNote(track, activeNotes, channel, note, currentTime) {
+    endNote(track, activeNotes, channel, note, currentTime) {
         const key = `${channel}-${note}`;
         if (activeNotes[key]) {
             const noteData = activeNotes[key];
@@ -162,11 +162,11 @@ class MIDIParser {
         }
     }
 
-    async ticksToSeconds(ticks) {
+    ticksToSeconds(ticks) {
         return (ticks / this.ticksPerBeat) * (this.tempo / 1000000);
     }
 
-    async readString(data, offset, length) {
+    readString(data, offset, length) {
         let str = '';
         for (let i = 0; i < length; i++) {
             str += String.fromCharCode(data[offset + i]);
@@ -174,15 +174,15 @@ class MIDIParser {
         return str;
     }
 
-    async readUint32(data, offset) {
+    readUint32(data, offset) {
         return (data[offset] << 24) | (data[offset + 1] << 16) | (data[offset + 2] << 8) | data[offset + 3];
     }
 
-    async readUint16(data, offset) {
+    readUint16(data, offset) {
         return (data[offset] << 8) | data[offset + 1];
     }
 
-    async readVariableLength(data, offset) {
+    readVariableLength(data, offset) {
         let value = 0;
         let byte;
         do {
@@ -287,7 +287,7 @@ class LayAI {
         this.tempoValue = document.getElementById('tempoValue');
         this.sampleNumber = document.getElementById('sampleNumber');
         this.sampleValue = document.getElementById('sampleValue');
-
+        
         // Display elements
         this.maxNumDisplay = document.getElementById('maxNumDisplay');
         this.totalChannelsDisplay = document.getElementById('totalChannelsDisplay');
@@ -340,7 +340,7 @@ class LayAI {
             this.tempodelta = parseInt(e.target.value) / 100; // Convert to multiplier (50-200 -> 0.5-2.0)
             this.tempoValue.textContent = this.tempodelta.toFixed(2) + 'x';
         });
-
+    
         this.sampleNumber.addEventListener('input', (e) => {
             this.samplenum = parseInt(e.target.value);
             this.sampleValue.textContent = this.samplenum;
@@ -623,9 +623,8 @@ class LayAI {
             this.applyGain(mixBuffer, volumeScale);
         }
 
-        // Apply tempo adjustment for WAV output 
+        // Apply tempo adjustment for WAV output (FFmpeg handles tempo for other formats)
         mixBuffer = await this.applyTempo(mixBuffer, this.tempo);
-        this.addLog(`Tempo: ${this.tempo} applied`, 'warning');
         const { blob, extension, mimeType } = await this.encodeMix(mixBuffer);
         this.mixMimeType = mimeType;
         this.addLog('Audio processing complete', 'success');
@@ -811,7 +810,7 @@ class LayAI {
       return 1 << ((N.toString(2)).length) - 1;
     }
 
-     audioBufferToWav(buffer) {
+    audioBufferToWav(buffer) {
         const tempoMod = this.highestPowerof2((this.tempo/10000000)*10000000);
         this.addLog(tempoMod, 'warning');
         const numChannels = buffer.numberOfChannels;
@@ -849,11 +848,12 @@ class LayAI {
             this.addLog("Generating full song", 'success');
             this.useSamples(buffer, view, numFrames, numChannels, 44);
         }
-        else
+        else if (this.sampleValue>-1)
         {
             this.addLog(`Generating Sample: ${this.sampleValue}`, 'success');
             this.getSample(buffer, view, 44);           
         } 
+        else this.useSamples(buffer, view, numFrames, numChannels, 44);
         return new Blob([arrayBuffer], { type: 'audio/wav' });
     }
 
@@ -941,9 +941,6 @@ class LayAI {
         this.addLog('Mixing session stopped', 'warning');
         this.addLog('COPYRIGHT BRENDAN CARELL', 'info');
         
-        // Reset form
-        //document.getElementById('songInput').value = '';
-        //this.songs = [];
         this.audioBuffers = [];
     }
 
@@ -1101,7 +1098,7 @@ class LayAI {
         this.playBtn.classList.remove('hidden');
         this.playBtn.removeAttribute('aria-disabled');
     }
-    
+
     changeAudio(newSrc) {
         // Pause current playback
         this.player.pause();

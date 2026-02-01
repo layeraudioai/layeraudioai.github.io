@@ -233,6 +233,8 @@ class LayAI {
         this.aitempo = 0;
         this.aimaxnum = 0;
         this.bytespersample = 0;
+        this.numSamples = 0;
+        this.samplenum = -1;
 
         // Audio processing variables
         this.crayzz = 0;
@@ -244,6 +246,8 @@ class LayAI {
         this.pan = {};
         this.audioContext = null;
         this.audioBuffers = [];
+        this.samples = [];
+        this.sampleBlobs = [];
         this.knowledgeBase = [];
         this.mixBlob = null;
         this.mixMimeType = 'audio/wav';
@@ -281,6 +285,8 @@ class LayAI {
         this.trebleFreqValue = document.getElementById('trebleFreqValue');
         this.volumeValue = document.getElementById('volumeValue');
         this.tempoValue = document.getElementById('tempoValue');
+        this.sampleNumber = document.getElementById('sampleNumber');
+        this.sampleValue = document.getElementById('sampleValue');
 
         // Display elements
         this.maxNumDisplay = document.getElementById('maxNumDisplay');
@@ -333,6 +339,11 @@ class LayAI {
         this.tempoSlider.addEventListener('input', (e) => {
             this.tempodelta = parseInt(e.target.value) / 100; // Convert to multiplier (50-200 -> 0.5-2.0)
             this.tempoValue.textContent = this.tempodelta.toFixed(2) + 'x';
+        });
+
+        this.sampleNumber.addEventListener('input', (e) => {
+            this.samplenum = parseInt(e.target.value);
+            this.sampleValue.textContent = this.samplenum;
         });
     }
 
@@ -559,6 +570,7 @@ class LayAI {
         this.treblefreq=finalTrebleFreq;
         this.volume=finalVolume;
         this.tempo=finalTempo;
+        this.sampleValue=this.samplenum;
         this.addLog(`Bass: ${finalBass}, Treble: ${finalTreble}, Bass Frequency: ${finalBassFreq}, Treble Frequency: ${finalTrebleFreq}, Volume: ${finalVolume}, Tempo: ${finalTempo.toFixed(2)}x`, 'info');
         this.addLog(`Pan Config: ${this.panfull}`, 'info');
 
@@ -612,9 +624,7 @@ class LayAI {
         }
 
         // Apply tempo adjustment for WAV output 
-        if (this.tempo !== 1.0) {
-            mixBuffer = await this.applyTempo(mixBuffer, this.tempo);
-        }
+        mixBuffer = await this.applyTempo(mixBuffer, this.tempo);
         this.addLog(`Tempo: ${this.tempo} applied`, 'warning');
         const { blob, extension, mimeType } = await this.encodeMix(mixBuffer);
         this.mixMimeType = mimeType;
@@ -753,11 +763,6 @@ class LayAI {
     }
 
     async applyTempo(buffer, tempo) {
-        // If tempo is 1.0 (normal speed), no change needed
-        if (Math.abs(tempo - 1.0) < 0.01) {
-            return buffer;
-        }
-
         // Clamp tempo to valid range
         const validTempo = Math.max(0.05, Math.min(15.0, tempo));
 
@@ -786,6 +791,7 @@ class LayAI {
         }
 
         this.addLog(`Tempo adjusted: ${validTempo.toFixed(2)}x (${newLength} samples)`, 'info');
+        this.numSamples = newLength;
         return newBuffer;
     }
 
@@ -838,17 +844,43 @@ class LayAI {
         view.setUint16(34, this.bytespersample * 8, true);
         writeString(36, 'data');
         view.setUint32(40, dataSize, true);
+        if (this.sampleValue<0) 
+        {
+            this.addLog("Generating full song", 'success');
+            this.useSamples(buffer, view, numFrames, numChannels, 44);
+        }
+        else
+        {
+            this.addLog(`Generating Sample: ${this.sampleValue}`, 'success');
+            this.getSample(buffer, view, 44);           
+        } 
+        return new Blob([arrayBuffer], { type: 'audio/wav' });
+    }
 
-        let offset = 44;
+    async useSamples(buffer, view, numFrames, numChannels, offset)
+    {   
+        let off=offset;
         for (let i = 0; i < numFrames; i++) {
             for (let channel = 0; channel < numChannels; channel++) {
                 const sample = buffer.getChannelData(channel)[i];
                 const clamped = Math.max(-1, Math.min(1, sample));
-                view.setInt16(offset, clamped < 0 ? clamped * 0x8000 : clamped * 0x7fff, true);
-                offset += this.bytespersample;
+                view.setInt16(off, clamped < 0 ? clamped * 0x8000 : clamped * 0x7fff, true);
+                off += this.bytespersample;
             }
         }
-        return new Blob([arrayBuffer], { type: 'audio/wav' });
+    }
+
+    async getSample(buffer, view, numFrames, numChannels, offset)
+    {
+        let off=offset;
+        for (let i = 0; i < numFrames; i++) {
+            for (let channel = 0; channel < numChannels; channel++) {
+                const sample = buffer.getChannelData(channel)[this.sampleValue];
+                const clamped = Math.max(-1, Math.min(1, sample));
+                view.setInt16(off, clamped < 0 ? clamped * 0x8000 : clamped * 0x7fff, true);
+                off += this.bytespersample;
+            }
+        }
     }
 
     handleRemember() {

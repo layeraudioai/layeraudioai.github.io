@@ -148,7 +148,7 @@ class MIDIParser {
         return this;
     }
 
-    endNote(track, activeNotes, channel, note, currentTime) {
+    async endNote(track, activeNotes, channel, note, currentTime) {
         const key = `${channel}-${note}`;
         if (activeNotes[key]) {
             const noteData = activeNotes[key];
@@ -162,11 +162,11 @@ class MIDIParser {
         }
     }
 
-    ticksToSeconds(ticks) {
+    async ticksToSeconds(ticks) {
         return (ticks / this.ticksPerBeat) * (this.tempo / 1000000);
     }
 
-    readString(data, offset, length) {
+    async readString(data, offset, length) {
         let str = '';
         for (let i = 0; i < length; i++) {
             str += String.fromCharCode(data[offset + i]);
@@ -174,15 +174,15 @@ class MIDIParser {
         return str;
     }
 
-    readUint32(data, offset) {
+    async readUint32(data, offset) {
         return (data[offset] << 24) | (data[offset + 1] << 16) | (data[offset + 2] << 8) | data[offset + 3];
     }
 
-    readUint16(data, offset) {
+    async readUint16(data, offset) {
         return (data[offset] << 8) | data[offset + 1];
     }
 
-    readVariableLength(data, offset) {
+    async readVariableLength(data, offset) {
         let value = 0;
         let byte;
         do {
@@ -192,7 +192,7 @@ class MIDIParser {
         return { value, newOffset: offset };
     }
 
-    addLog(message, type = 'info') {
+    async addLog(message, type = 'info') {
         const logOutput = document.getElementById('logOutput');
         if (!logOutput) return;
         const line = document.createElement('div');
@@ -397,7 +397,7 @@ class LayAI {
         for (const option of options) {
             const originalLabel = option.dataset.label || option.textContent;
             option.dataset.label = originalLabel;
-            const supported = !!this.outputFormatSupport[option.value];
+            const supported = this.outputFormatSupport[option.value];
             option.disabled = !supported;
             option.textContent = supported ? originalLabel : `${originalLabel} (browser export unavailable)`;
         }
@@ -419,7 +419,7 @@ class LayAI {
         };
     }
 
-    ensureSupportedExtension() {
+    async ensureSupportedExtension() {
         const selected = this.extensionSelect.value;
         if (!this.outputFormatSupport || !this.outputFormatSupport[selected]) {
             this.addLog('Selected output format is not available in-browser. Falling back to WAV.', 'warning');
@@ -457,7 +457,7 @@ class LayAI {
         this.setupPans();
     }
 
-    readFile(file) {
+    async readFile(file) {
         return new Promise((resolve, reject) => {
             const reader = new FileReader();
             reader.onload = (e) => resolve(e.target.result);
@@ -531,7 +531,7 @@ class LayAI {
         this.running = true;
     }
 
-    updateDisplay() {
+    async updateDisplay() {
         this.maxNumDisplay.textContent = this.maxnum;
         this.totalChannelsDisplay.textContent = this.totalchannels;
         this.panDisplay.textContent = this.panfull.substring(0, 1000) + (this.panfull.length > 1000 ? '...' : '');
@@ -597,10 +597,10 @@ class LayAI {
         }
 
         // Apply tempo adjustment for WAV output (FFmpeg handles tempo for other formats)
-        if (this.extension === 'wav' && this.tempo !== 1.0) {
+        if (this.tempo !== 1.0) {
             mixBuffer = await this.applyTempo(mixBuffer, this.tempo);
         }
-
+        this.addLog(`Tempo: ${this.tempo} applied`, 'warning');
         const { blob, extension, mimeType } = await this.encodeMix(mixBuffer);
         this.mixMimeType = mimeType;
         this.addLog('Audio processing complete', 'success');
@@ -744,7 +744,7 @@ class LayAI {
         }
 
         // Clamp tempo to valid range
-        const validTempo = Math.max(0.5, Math.min(2.0, tempo));
+        const validTempo = Math.max(0.05, Math.min(15.0, tempo));
 
         // Calculate new length based on tempo
         const newLength = Math.floor(buffer.length / validTempo);
@@ -821,7 +821,7 @@ class LayAI {
 
     buildFfmpegArgs(inputName, outputName, extension, bitrate, tempo) {
         // Ensure tempo is within valid range for atempo filter (0.5 to 2.0)
-        const validTempo = Math.max(0.5, Math.min(2.0, tempo));
+        const validTempo = Math.max(0.05, Math.min(15.0, tempo));
         // Only apply atempo filter if tempo is not 1.0 (no change)
         const tempoFilter = Math.abs(validTempo - 1.0) > 0.01 ? ['-af', `atempo=${validTempo.toFixed(2)}`] : [];
 
@@ -844,6 +844,7 @@ class LayAI {
         if (!Number.isFinite(bitrate)) return 192;
         return Math.min(Math.max(bitrate, 32), 512);
     }
+
     highestPowerof2(N)
     {
       // if N is a power of two simply return it
@@ -853,8 +854,9 @@ class LayAI {
     
       return 1 << ((N.toString(2)).length) - 1;
     }
-    audioBufferToWav(buffer) {
-        const tempoMod = (this.highestPowerof2((this.tempo/10000000)*10000000)/128)/8;
+
+     audioBufferToWav(buffer) {
+        const tempoMod = this.highestPowerof2((this.tempo/10000000)*10000000);
         this.addLog(tempoMod, 'warning');
         const numChannels = buffer.numberOfChannels;
         const sampleRate = buffer.sampleRate;
@@ -1054,6 +1056,7 @@ class LayAI {
         this.logOutput.appendChild(line);
         this.logOutput.scrollTop = this.logOutput.scrollHeight;
     }
+
     showProgress(show) {
         if (show) {
             this.progressOverlay.classList.remove('hidden');
@@ -1116,6 +1119,7 @@ class LayAI {
         this.playBtn.classList.remove('hidden');
         this.playBtn.removeAttribute('aria-disabled');
     }
+    
     changeAudio(newSrc) {
         // Pause current playback
         this.player.pause();
@@ -1126,6 +1130,7 @@ class LayAI {
         // Play the new audio
         this.player.play();
     }
+
     handlePlay() {
         this.addLog("play clicked", 'warning');
         if (!this.mixReady || !this.mixBlob) {
@@ -1133,14 +1138,7 @@ class LayAI {
             return;
         }
         const url = URL.createObjectURL(this.mixBlob);
-        //const link = document.createElement('a');
-        //link.href = url;
-        //link.download = this.mixFilename;
-        //document.body.appendChild(link);
         this.changeAudio(url);        
-        //link.click();
-        //link.remove();
-        //URL.revokeObjectURL(url);
     }
 
     handleDownload() {

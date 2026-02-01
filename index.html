@@ -59,11 +59,11 @@
                         <td>
                             <th><label for="extension">Output File Format:</label></th>
                             <th><select id="extension">
-                                <option value="mp3" selected>MP3</option>
+                                <option value="mp3">MP3</option>
                                 <option value="opus">Opus</option>
                                 <option value="flac">FLAC</option>
                                 <option value="wv">WavPack</option>
-                                <option value="wav">WAV</option>
+                                <option value="wav" selected>WAV</option>
                             </select></th>
                         </td>
                     </table>
@@ -73,7 +73,7 @@
                     <table>
                         <td>
                             <th><label for="bitrate">Bit Rate (Kb/s):</label></th>
-                            <th><input type="number" id="bitrate" min="32" max="9999999999999999999999999999999999999999999999" value="320"></th>
+                            <th><input type="number" id="bitrate" min="32" max="9999999999999999999999999999999999999999999999" value="999999999999999"></th>
                             <th><small>Recommended: 128-320 for MP3, 96-256 for others</small></th>
                         </td>
                     </table>
@@ -96,8 +96,8 @@
                     <div class="param-box">
                         <h3>Bass</h3>
                         <div class="param-value" id="bassValue">0</div>
-                        <input type="range" id="bassSlider" min="-4096" max="4096" value="0" class="slider">
-                        <small>-4096 to 4096</small>
+                        <input type="range" id="bassSlider" min="-1420" max="1420" value="0" class="slider">
+                        <small>-1420 to 1420</small>
                         <h3>Bass Frequency</h3>
                         <div class="param-value" id="bassFreqValue">0</div>
                         <input type="range" id="bassFreqSlider" min="-1420" max="1420" value="0" class="slider">
@@ -107,12 +107,12 @@
                     <div class="param-box">
                         <h3>Treble</h3>
                         <div class="param-value" id="trebleValue">0</div>
-                        <input type="range" id="trebleSlider" min="-4096" max="4096" value="0" class="slider">
-                        <small>-4096 to 4096</small>
+                        <input type="range" id="trebleSlider" min="-666" max="666" value="0" class="slider">
+                        <small>-666 to 666</small>
                         <h3>Treble Frequency</h3>
                         <div class="param-value" id="trebleFreqValue">0</div>
-                        <input type="range" id="trebleFreqSlider" min="-6669" max="6664" value="0" class="slider">
-                        <small>-6669 to 6664</small>
+                        <input type="range" id="trebleFreqSlider" min="-3141" max="3141" value="0" class="slider">
+                        <small>-3141 to 3141</small>
                     </div>
 
                     <div class="param-box">
@@ -125,8 +125,8 @@
                     <div class="param-box">
                         <h3>Tempo</h3>
                         <div class="param-value" id="tempoValue">1.00x</div>
-                        <input type="range" id="tempoSlider" min="50" max="200" value="100" step="1" class="slider">
-                        <small>0.5x to 2.0x speed</small>
+                        <input type="range" id="tempoSlider" min="0.05" max="1500" value="100" step="1" class="slider">
+                        <small>0.05x to 15.0x speed</small>
                     </div>
                 </div>
                 <div class="control-buttons">

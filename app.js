@@ -957,29 +957,31 @@ class LayAI {
         }
     }
 
-    seededRandom(seed, max) {
-        // Seeded random number generator using sampleValue as seed
-        const x = Math.sin(seed) * 10000;
-        return Math.floor((x - Math.floor(x)) * max);
-    }
-
     async getSample(buffer, view, numFrames, numChannels, offset)
     {
         let off=offset;
-        // Use sampleValue as seed to randomize which sample is chosen
-        let randomSampleIndex = this.seededRandom(this.sampleValue, numFrames);
         
         for (let i = 0; i < numFrames; i++) {
             for (let channel = 0; channel < numChannels; channel++) {
-                // Use seeded random value to select which frame to pull from
-                const frameIndex = (randomSampleIndex + i) % numFrames;
-                const sample = buffer.getChannelData(channel)[frameIndex];
+                // Use sampleValue as seed with iteration for non-linear frame selection
+                const frameIndex = this.seededRandom(this.sampleValue, i + channel * numFrames, numFrames);
+                const sample = buffer.getChannelData(channel)[(i+(i%this.sampleValue))%numFrames];
                 const clamped = Math.max(-1, Math.min(1, sample));
                 view.setInt16(off, clamped < 0 ? clamped * 0x8000 : clamped * 0x7fff, true);
                 off += this.bytespersample;
-                randomSampleIndex = this.seededRandom(this.sampleValue, numFrames);
             }
         }
+    }
+
+    seededRandom(seed, iteration, max) {
+        // Non-linear seeded random using multiple mathematical functions
+        // Combines sine, cosine, and power operations for non-linear distribution
+        const s1 = Math.sin(seed * 12.9898) * 43758.5453;
+        const s2 = Math.cos(seed * 78.233 + iteration) * 94384.2948;
+        const combined = Math.sin(s1) * Math.cos(s2);
+        const nonLinear = Math.pow(Math.abs(combined), 1.5); // Non-linear power scaling
+        const normalized = (nonLinear % 1 + 1) % 1; // Ensure value is between 0-1
+        return Math.floor(normalized * max) % max; // Ensure result is within valid range
     }
 
     handleRemember() {

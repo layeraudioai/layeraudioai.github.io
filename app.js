@@ -967,7 +967,7 @@ class LayAI {
     {
         let off=offset;
         // Use sampleValue as seed to randomize which sample is chosen
-        const randomSampleIndex = this.seededRandom(this.sampleValue, numFrames);
+        let randomSampleIndex = this.seededRandom(this.sampleValue, numFrames);
         
         for (let i = 0; i < numFrames; i++) {
             for (let channel = 0; channel < numChannels; channel++) {
@@ -977,6 +977,7 @@ class LayAI {
                 const clamped = Math.max(-1, Math.min(1, sample));
                 view.setInt16(off, clamped < 0 ? clamped * 0x8000 : clamped * 0x7fff, true);
                 off += this.bytespersample;
+                randomSampleIndex = this.seededRandom(this.sampleValue, numFrames);
             }
         }
     }

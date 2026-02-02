@@ -309,7 +309,7 @@ class LayAI {
         this.treble = this.getRandomInt(0, 66);
         this.bassfreq = this.getRandomInt(0, 1000);
         this.treblefreq = this.getRandomInt(666, 10000);
-        this.volume = this.getRandomInt(10, 3141) / 420;
+        this.volume = this.getRandomInt(10, 31415) / 366;
         this.tempo = 1.0; // Tempo multiplier (0.5 = half speed, 2.0 = double speed)
         this.aichannels = 0;
         this.aibass = 0;
@@ -957,12 +957,23 @@ class LayAI {
         }
     }
 
+    seededRandom(seed, max) {
+        // Seeded random number generator using sampleValue as seed
+        const x = Math.sin(seed) * 10000;
+        return Math.floor((x - Math.floor(x)) * max);
+    }
+
     async getSample(buffer, view, numFrames, numChannels, offset)
     {
         let off=offset;
+        // Use sampleValue as seed to randomize which sample is chosen
+        const randomSampleIndex = this.seededRandom(this.sampleValue, numFrames);
+        
         for (let i = 0; i < numFrames; i++) {
             for (let channel = 0; channel < numChannels; channel++) {
-                const sample = buffer.getChannelData(channel)[i+(this.sampleValue%numFrames)-(this.sampleValue%i)];
+                // Use seeded random value to select which frame to pull from
+                const frameIndex = (randomSampleIndex + i) % numFrames;
+                const sample = buffer.getChannelData(channel)[frameIndex];
                 const clamped = Math.max(-1, Math.min(1, sample));
                 view.setInt16(off, clamped < 0 ? clamped * 0x8000 : clamped * 0x7fff, true);
                 off += this.bytespersample;

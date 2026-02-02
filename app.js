@@ -309,7 +309,7 @@ class LayAI {
         this.treble = this.getRandomInt(0, 66);
         this.bassfreq = this.getRandomInt(0, 1000);
         this.treblefreq = this.getRandomInt(666, 10000);
-        this.volume = this.getRandomInt(10, 31415) / 420;
+        this.volume = this.getRandomInt(10, 3141) / 420;
         this.tempo = 1.0; // Tempo multiplier (0.5 = half speed, 2.0 = double speed)
         this.aichannels = 0;
         this.aibass = 0;

@@ -1,5 +1,92 @@
 // LayAI - Complete JavaScript Implementation
 
+//Browser Music Visualizer
+class Visualizer 
+{
+    constructor(source)
+    {
+        this.canvas = document.getElementById('visualizer');
+        this.ctx = this.canvas.getContext('2d');
+
+        this.audioCtx, this.analyser, this.source, this.dataArray, this.bufferLength;
+        this.init(source);
+    }
+    
+    // Resize canvas to fill window
+    resizeCanvas() {
+        this.canvas.width = window.innerWidth;
+        this.canvas.height = window.innerHeight;
+    }
+
+    init(source)
+    {
+        window.addEventListener('resize', () => this.resizeCanvas());
+
+        // Stop previous audio if playing
+        if (this.audioCtx) {
+            this.audioCtx.close();
+        }
+        this.audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        this.analyser = this.audioCtx.createAnalyser();
+        this.analyser.fftSize = 256; // Higher = more bars
+        this.bufferLength = this.analyser.frequencyBinCount;
+        this.dataArray = new Uint8Array(this.bufferLength);
+
+        // Determine whether `source` is an existing audio element or a URL
+        let audio;
+        if (source && (source instanceof HTMLMediaElement || source.tagName === 'AUDIO')) {
+            audio = source;
+        } else {
+            // Create audio element when a URL/string is provided
+            audio = new Audio();
+            audio.src = source || '';
+            audio.crossOrigin = "anonymous";
+            audio.controls = true;
+            audio.style.position = "absolute";
+            audio.style.bottom = "10px";
+            audio.style.left = "10px";
+            document.body.appendChild(audio);
+            // Only autoplay when we created the element here
+            audio.play();
+        }
+
+        // Connect audio to analyser
+        try {
+            this.source = this.audioCtx.createMediaElementSource(audio);
+            this.source.connect(this.analyser);
+            this.analyser.connect(this.audioCtx.destination);
+        } catch (e) {
+            // createMediaElementSource can throw if audio is already connected to another context
+            console.warn('Visualizer: could not create media element source', e);
+        }
+
+        this.draw();
+    }
+
+    draw() {
+        requestAnimationFrame(() => this.draw());
+        this.analyser.getByteFrequencyData(this.dataArray);
+
+        this.ctx.fillStyle = 'rgba(0, 0, 0, 0.2)';
+        this.ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
+
+        const barWidth = (this.canvas.width / this.bufferLength) * 2.5;
+        let x = 0;
+
+        for (let i = 0; i < this.bufferLength; i++) {
+            const barHeight = this.dataArray[i] * 2;
+            const r = barHeight + 25;
+            const g = 250 * (i / this.bufferLength);
+            const b = 50;
+
+            this.ctx.fillStyle = `rgb(${r},${g},${b})`;
+            this.ctx.fillRect(x, this.canvas.height - barHeight, barWidth, barHeight);
+
+            x += barWidth + 1;
+        }
+    }
+}
+
 // Browser-compatible MIDI Parser
 class MIDIParser {
     constructor() {
@@ -250,6 +337,7 @@ class LayAI {
         this.sampleBlobs = [];
         this.knowledgeBase = [];
         this.mixBlob = null;
+        this.visualizerObj = null;
         this.mixMimeType = 'audio/wav';
 
         // DOM Elements
@@ -271,6 +359,7 @@ class LayAI {
         this.progressFill = document.getElementById('progressFill');
         this.progressText = document.getElementById('progressText');
         this.extensionSelect = document.getElementById('extension');
+        this.visualizer = document.getElementById('visualizer');
 
         // Slider elements
         this.bassSlider = document.getElementById('bassSlider');
@@ -1115,7 +1204,9 @@ class LayAI {
             return;
         }
         const url = URL.createObjectURL(this.mixBlob);
-        this.changeAudio(url);        
+        this.changeAudio(url);  
+        // Reuse the existing player element to avoid creating a second audio element
+        this.visualizerObj = new Visualizer(this.player);
     }
 
     handleDownload() {

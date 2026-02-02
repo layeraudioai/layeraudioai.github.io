@@ -33,6 +33,12 @@ body {
     background-position: center 0;
 }
 
+canvas {
+    display: block;
+    width: 10vw;
+    height: 10vh;
+}
+
 .container {
     max-width: 1200px;
     margin: 0 0;

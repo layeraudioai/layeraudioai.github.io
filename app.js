@@ -74,7 +74,7 @@ class Visualizer
         let x = 0;
 
         for (let i = 0; i < this.bufferLength; i++) {
-            const barHeight = this.dataArray[i] * 2;
+            const barHeight = this.dataArray[i]/2; 
             const r = barHeight + 25;
             const g = 250 * (i / this.bufferLength);
             const b = 50;
@@ -331,6 +331,7 @@ class LayAI {
         this.bitrate = 320;
         this.channels = [];
         this.pan = {};
+        this.trackPans = [];
         this.audioContext = null;
         this.audioBuffers = [];
         this.samples = [];
@@ -348,6 +349,7 @@ class LayAI {
         this.startBtn = document.getElementById('startBtn');
         this.generateBtn = document.getElementById('generateBtn');
         this.rememberBtn = document.getElementById('rememberBtn');
+        this.resetBtn = document.getElementById('resetBtn');
         this.rerunBtn = document.getElementById('rerunBtn');
         this.stopBtn = document.getElementById('stopBtn');
         this.convertBtn = document.getElementById('convertBtn');
@@ -381,12 +383,52 @@ class LayAI {
         this.maxNumDisplay = document.getElementById('maxNumDisplay');
         this.totalChannelsDisplay = document.getElementById('totalChannelsDisplay');
         this.panDisplay = document.getElementById('panDisplay');
+        this.generatedFilenameDisplay = document.getElementById('generatedFilename');
+        this.vendorStatusDisplay = document.getElementById('vendorStatus');
 
         this.initEventListeners();
         this.updateOutputFormatOptions();
         this.loadKnowledgeBase();
         this.resetDownload();
+        // Check vendor assets presence and update UI
+        this.checkVendorAssets();
         this.fetchFile = null;
+    }
+
+    async checkVendorAssets() {
+        const vendorFiles = [
+            { path: 'vendor/lame.min.js', name: 'lamejs' },
+            { path: 'vendor/ffmpeg.min.js', name: 'ffmpeg' }
+        ];
+        const results = {};
+        for (const vf of vendorFiles) {
+            try {
+                // Try a HEAD fetch to check existence
+                const res = await fetch(vf.path, { method: 'HEAD' });
+                results[vf.name] = res.ok;
+            } catch (e) {
+                results[vf.name] = false;
+            }
+        }
+
+        let text;
+        if (results.lamejs && results.ffmpeg) {
+            text = 'Available (lame, ffmpeg)';
+            if (this.vendorStatusDisplay) this.vendorStatusDisplay.style.color = 'green';
+        } else if (results.lamejs || results.ffmpeg) {
+            const parts = [];
+            if (results.lamejs) parts.push('lame');
+            if (results.ffmpeg) parts.push('ffmpeg');
+            text = `Partial (${parts.join(', ')}) — CDN fallback will be used for missing assets`;
+            if (this.vendorStatusDisplay) this.vendorStatusDisplay.style.color = 'orange';
+        } else {
+            text = 'Not present — CDN fallback will be used';
+            if (this.vendorStatusDisplay) this.vendorStatusDisplay.style.color = 'red';
+        }
+        if (this.vendorStatusDisplay) this.vendorStatusDisplay.textContent = text;
+        // Also log
+        this.addLog('Vendor assets check: ' + text, 'info');
+        return results;
     }
 
     initEventListeners() {
@@ -399,8 +441,28 @@ class LayAI {
         if (this.rerunBtn) {
             this.rerunBtn.addEventListener('click', () => this.handleRerun());
         }
+        if (this.resetBtn) {
+            this.resetBtn.addEventListener('click', () => this.handleReset());
+        }
         this.stopBtn.addEventListener('click', () => this.handleStop());
         this.deleteBtn.addEventListener('click', () => this.handleDelete());
+        // Manual vendor assets check button
+        const vendorCheckBtn = document.getElementById('vendorCheckBtn');
+        if (vendorCheckBtn) {
+            vendorCheckBtn.addEventListener('click', async () => {
+                try {
+                    vendorCheckBtn.disabled = true;
+                    const orig = vendorCheckBtn.textContent;
+                    vendorCheckBtn.textContent = 'Checking...';
+                    await this.checkVendorAssets();
+                    vendorCheckBtn.textContent = orig;
+                } catch (e) {
+                    this.addLog('Manual vendor check failed: ' + (e && e.message ? e.message : e), 'error');
+                } finally {
+                    vendorCheckBtn.disabled = false;
+                }
+            });
+        }
         // Slider listeners
         this.bassSlider.addEventListener('input', (e) => {
             this.bassdelta = parseInt(e.target.value);
@@ -623,6 +685,9 @@ class LayAI {
         this.panfull = panfullConfig;
         this.addLog('PAN SETUP DONE', 'success');
 
+        // Render per-track pan editor UI
+        try { this.renderPanEditor(); } catch (e) { this.addLog('Pan editor render failed: ' + (e && e.message ? e.message : e), 'error'); }
+
         // Update display and transition to mixing section
         this.updateDisplay();
         this.setupSection.classList.remove('active');
@@ -680,15 +745,192 @@ class LayAI {
         if (this.extension === 'wav') {
             return { blob: wavBlob, extension: 'wav', mimeType: 'audio/wav' };
         }
+
+        // MP3 export using lamejs (dynamically loaded if needed)
         if (this.extension === 'mp3') {
-            return { blob: wavBlob, extension: 'mp3', mimeType: 'audio/mpeg' };
+            try {
+                // Prefer local vendor copy to avoid CDN latency, fallback to CDN
+                try {
+                    await this.ensureScript('vendor/lame.min.js');
+                } catch (e) {
+                    await this.ensureScript('https://cdn.jsdelivr.net/npm/lamejs@1.2.0/lame.min.js');
+                }
+                const Mp3Encoder = (window.lamejs && window.lamejs.Mp3Encoder) || window.Mp3Encoder || (window.lame && window.lame.Mp3Encoder);
+                if (!Mp3Encoder) {
+                    this.addLog('Mp3 encoder not available; falling back to WAV', 'warning');
+                    return { blob: wavBlob, extension: 'wav', mimeType: 'audio/wav' };
+                }
+
+                const numChannels = Math.min(2, buffer.numberOfChannels || 1);
+                const sampleRate = buffer.sampleRate || 44100;
+
+                // Prepare samples (interleave if stereo)
+                let samples;
+                if (numChannels === 1) samples = buffer.getChannelData(0);
+                else samples = this.interleave(buffer.getChannelData(0), buffer.getChannelData(1));
+
+                const pcm16 = this.floatTo16BitPCM(samples);
+                const bitrate = Math.max(32, Math.min(320, Math.round(this.getExportBitrate() || 128)));
+                const mp3enc = new Mp3Encoder(numChannels, sampleRate, bitrate);
+
+                const mp3Data = [];
+                const maxSamples = 1152;
+                for (let i = 0; i < pcm16.length; i += maxSamples) {
+                    const chunk = pcm16.subarray(i, i + maxSamples);
+                    const mp3buf = mp3enc.encodeBuffer(chunk);
+                    if (mp3buf && mp3buf.length) mp3Data.push(new Uint8Array(mp3buf));
+                }
+                const end = mp3enc.flush();
+                if (end && end.length) mp3Data.push(new Uint8Array(end));
+
+                const mp3Blob = new Blob(mp3Data, { type: 'audio/mpeg' });
+                return { blob: mp3Blob, extension: 'mp3', mimeType: 'audio/mpeg' };
+            } catch (e) {
+                this.addLog('MP3 encoding failed: ' + (e && e.message ? e.message : e), 'error');
+                return { blob: wavBlob, extension: 'wav', mimeType: 'audio/wav' };
+            }
         }
+
+        // Opus export via MediaRecorder (records playback into an Opus container)
+        if (this.extension === 'opus' || this.extension === 'ogg' || this.extension === 'webm') {
+            const candidates = ['audio/ogg;codecs=opus', 'audio/webm;codecs=opus'];
+            for (const mime of candidates) {
+                if (!window.MediaRecorder || (MediaRecorder.isTypeSupported && !MediaRecorder.isTypeSupported(mime))) continue;
+                try {
+                    const blob = await this.recordWithMediaRecorder(buffer, mime);
+                    const ext = mime.includes('ogg') ? 'opus' : 'webm';
+                    return { blob, extension: ext, mimeType: mime };
+                } catch (err) {
+                    // try next candidate
+                }
+            }
+            this.addLog('Opus recording not supported; falling back to WAV', 'warning');
+            return { blob: wavBlob, extension: 'wav', mimeType: 'audio/wav' };
+        }
+
+        // FLAC support: try ffmpeg.wasm if available, otherwise fallback to WAV
         if (this.extension === 'flac') {
-            return { blob: wavBlob, extension: 'flac', mimeType: 'audio/flac' };
+            try {
+                // Prefer local vendor copy to avoid CDN latency, fallback to CDN
+                try {
+                    await this.ensureScript('vendor/ffmpeg.min.js');
+                } catch (e) {
+                    await this.ensureScript('https://cdn.jsdelivr.net/npm/@ffmpeg/ffmpeg@0.11.6/dist/ffmpeg.min.js');
+                }
+                const createFFmpeg = window.createFFmpeg || (window.FFmpeg && window.FFmpeg.createFFmpeg) || null;
+                const fetchFile = window.fetchFile || (window.FFmpeg && window.FFmpeg.fetchFile) || null;
+                if (!createFFmpeg) throw new Error('ffmpeg.wasm createFFmpeg not found');
+
+                // Prefer local ffmpeg core when vendored, otherwise fall back to CDN core
+                let corePath = 'https://cdn.jsdelivr.net/npm/@ffmpeg/core@0.11.0/dist/ffmpeg-core.js';
+                try {
+                    await this.ensureScript('vendor/ffmpeg-core.js');
+                    corePath = 'vendor/ffmpeg-core.js';
+                } catch (err) {
+                    // try CDN core if local not available
+                    try { await this.ensureScript(corePath); } catch (e) { /* ignore */ }
+                }
+                const ffmpeg = createFFmpeg({ log: false, corePath });
+                await ffmpeg.load();
+                // write input wav
+                const inputName = 'input.wav';
+                const outputName = 'output.flac';
+                const arrayBuffer = await wavBlob.arrayBuffer();
+                ffmpeg.FS('writeFile', inputName, new Uint8Array(arrayBuffer));
+                await ffmpeg.run('-i', inputName, '-c:a', 'flac', '-compression_level', '5', outputName);
+                const out = ffmpeg.FS('readFile', outputName);
+                const flacBlob = new Blob([out.buffer], { type: 'audio/flac' });
+                return { blob: flacBlob, extension: 'flac', mimeType: 'audio/flac' };
+            } catch (e) {
+                this.addLog('FLAC encoding via ffmpeg.wasm failed: ' + (e && e.message ? e.message : e), 'warning');
+                this.addLog('Falling back to WAV for FLAC export', 'warning');
+                return { blob: wavBlob, extension: 'wav', mimeType: 'audio/wav' };
+            }
         }
+
+        // WavPack not implemented in-browser; fallback to WAV
         if (this.extension === 'wv') {
-            return { blob: wavBlob, extension: 'wv', mimeType: 'audio/wavpack' };
+            this.addLog('WavPack export is not available in-browser; returning WAV fallback', 'warning');
+            return { blob: wavBlob, extension: 'wav', mimeType: 'audio/wav' };
         }
+
+        // Default fallback
+        this.addLog('Unknown extension requested; returning WAV', 'warning');
+        return { blob: wavBlob, extension: 'wav', mimeType: 'audio/wav' };
+    }
+
+    // Helper: dynamically load a script if not already present
+    ensureScript(url) {
+        return new Promise((resolve, reject) => {
+            if (!url) return reject(new Error('No script URL provided'));
+            const already = Array.from(document.getElementsByTagName('script')).some(s => s.src && s.src.indexOf(url) !== -1);
+            if (already) return resolve();
+            const s = document.createElement('script');
+            s.src = url;
+            s.onload = () => resolve();
+            s.onerror = () => reject(new Error('Failed to load ' + url));
+            document.head.appendChild(s);
+        });
+    }
+
+    // Helper: convert Float32Array [-1..1] to Int16Array
+    floatTo16BitPCM(float32Array) {
+        const l = float32Array.length;
+        const buf = new Int16Array(l);
+        for (let i = 0; i < l; i++) {
+            let s = Math.max(-1, Math.min(1, float32Array[i]));
+            buf[i] = s < 0 ? s * 0x8000 : s * 0x7fff;
+        }
+        return buf;
+    }
+
+    // Helper: interleave two Float32Array channels into a single Float32Array
+    interleave(left, right) {
+        const length = left.length + right.length;
+        const result = new Float32Array(length);
+        let index = 0, inputIndex = 0;
+        while (index < length) {
+            result[index++] = left[inputIndex];
+            result[index++] = right[inputIndex];
+            inputIndex++;
+        }
+        return result;
+    }
+
+    // Helper: play an AudioBuffer into a MediaStreamDestination and record with MediaRecorder
+    recordWithMediaRecorder(buffer, mimeType) {
+        return new Promise(async (resolve, reject) => {
+            try {
+                const AudioCtx = window.AudioContext || window.webkitAudioContext;
+                const ctx = new AudioCtx();
+                const src = ctx.createBufferSource();
+                src.buffer = buffer;
+                const dest = ctx.createMediaStreamDestination();
+                src.connect(dest);
+                // Also connect to destination so browser may pass audio (optional)
+                try { src.connect(ctx.destination); } catch (e) {}
+
+                const recorder = new MediaRecorder(dest.stream, { mimeType });
+                const chunks = [];
+                recorder.ondataavailable = (ev) => { if (ev.data && ev.data.size) chunks.push(ev.data); };
+                recorder.onerror = (ev) => { try { ctx.close && ctx.close(); } catch(e){}; reject(ev.error || new Error('Recording error')); };
+                recorder.onstop = () => {
+                    try { ctx.close && ctx.close(); } catch (e) {}
+                    resolve(new Blob(chunks, { type: mimeType }));
+                };
+
+                recorder.start();
+                src.start();
+
+                const timeout = (buffer.duration || (buffer.length / buffer.sampleRate || 0)) * 1000 + 200;
+                setTimeout(() => {
+                    try { src.stop(); } catch (e) {}
+                    try { recorder.stop(); } catch (e) { try { recorder.requestData(); } catch (e2) {} }
+                }, timeout);
+            } catch (err) {
+                reject(err);
+            }
+        });
     }
 
     async processAudio(bass, treble, volume) {
@@ -768,6 +1010,38 @@ class LayAI {
     }
 
     applyPanMapping(channelPool, mapping, outputChannels, maxLength, sampleRate) {
+        // If per-track pan values are present, apply them as an equal-power pan
+        if (this.trackPans && this.trackPans.length === channelPool.length) {
+            const outCh = Math.max(1, outputChannels);
+            const output = this.audioContext.createBuffer(outCh, maxLength, sampleRate);
+
+            for (let inIdx = 0; inIdx < channelPool.length; inIdx++) {
+                const pan = typeof this.trackPans[inIdx] === 'number' ? this.trackPans[inIdx] : 0; // -1 .. 1
+                const angle = (pan + 1) * Math.PI / 4; // -1..1 -> 0..pi/2
+                const leftGain = Math.cos(angle);
+                const rightGain = Math.sin(angle);
+                const inputData = channelPool[inIdx];
+                if (!inputData) continue;
+
+                if (outCh === 1) {
+                    const out0 = output.getChannelData(0);
+                    const monoGain = (leftGain + rightGain) * 0.5;
+                    for (let i = 0; i < maxLength; i++) out0[i] += inputData[i] * monoGain;
+                } else {
+                    const left = output.getChannelData(0);
+                    const right = output.getChannelData(1);
+                    for (let i = 0; i < maxLength; i++) {
+                        left[i] += inputData[i] * leftGain;
+                        right[i] += inputData[i] * rightGain;
+                    }
+                }
+            }
+
+            // For outputs beyond 2 channels, leave them silent (mapping could be extended later)
+            return output;
+        }
+
+        // Default mapping behavior (no per-track pans)
         const output = this.audioContext.createBuffer(outputChannels, maxLength, sampleRate);
         for (let outChannel = 0; outChannel < outputChannels; outChannel++) {
             const outputData = output.getChannelData(outChannel);
@@ -782,6 +1056,92 @@ class LayAI {
             }
         }
         return output;
+    }
+
+    // Render the per-track pan editor UI based on detected input channels
+    renderPanEditor() {
+        const container = document.getElementById('panEditor');
+        const message = document.getElementById('panEditorMessage');
+        if (!container) return;
+        container.innerHTML = '';
+        const total = this.totalchannels || 0;
+        if (total === 0) {
+            if (message) message.textContent = 'Load files and click Start to show per-track panning controls.';
+            return;
+        }
+
+        this.trackPans = new Array(total).fill(0);
+
+        for (let i = 0; i < total; i++) {
+            const wrapper = document.createElement('div');
+            wrapper.className = 'pan-track';
+            wrapper.style.display = 'flex';
+            wrapper.style.alignItems = 'center';
+            wrapper.style.marginBottom = '6px';
+
+            const label = document.createElement('label');
+            label.textContent = `Track ${i}`;
+            label.style.width = '80px';
+            wrapper.appendChild(label);
+
+            const input = document.createElement('input');
+            input.type = 'range';
+            input.min = -100;
+            input.max = 100;
+            input.value = 0;
+            input.dataset.index = String(i);
+            input.style.flex = '1';
+            input.addEventListener('input', (e) => {
+                const idx = Number(e.target.dataset.index);
+                const val = Number(e.target.value) / 100; // normalize to -1..1
+                this.trackPans[idx] = val;
+                const out = wrapper.querySelector('.pan-value');
+                if (out) out.textContent = val.toFixed(2);
+            });
+            wrapper.appendChild(input);
+
+            const span = document.createElement('span');
+            span.className = 'pan-value';
+            span.style.width = '48px';
+            span.style.textAlign = 'right';
+            span.textContent = '0.00';
+            wrapper.appendChild(span);
+
+            container.appendChild(wrapper);
+        }
+
+        if (message) message.textContent = '';
+
+        // Wire control buttons
+        const autoBtn = document.getElementById('autoSpreadPans');
+        const resetBtn = document.getElementById('resetPans');
+        if (autoBtn) autoBtn.onclick = () => this.autoSpreadPans();
+        if (resetBtn) resetBtn.onclick = () => this.resetPansUI();
+    }
+
+    autoSpreadPans() {
+        const n = this.trackPans.length;
+        if (n <= 1) return;
+        for (let i = 0; i < n; i++) {
+            const val = -1 + (2 * i) / (n - 1);
+            this.trackPans[i] = val;
+            const input = document.querySelector(`#panEditor input[data-index=\"${i}\"]`);
+            const out = input && input.parentNode ? input.parentNode.querySelector('.pan-value') : null;
+            if (input) input.value = Math.round(val * 100);
+            if (out) out.textContent = val.toFixed(2);
+        }
+        this.addLog('Auto-spread pans applied', 'info');
+    }
+
+    resetPansUI() {
+        for (let i = 0; i < this.trackPans.length; i++) {
+            this.trackPans[i] = 0;
+            const input = document.querySelector(`#panEditor input[data-index=\"${i}\"]`);
+            const out = input && input.parentNode ? input.parentNode.querySelector('.pan-value') : null;
+            if (input) input.value = 0;
+            if (out) out.textContent = '0.00';
+        }
+        this.addLog('Per-track pans reset', 'info');
     }
 
     async applyToneShaping(buffer, bass, treble) {
@@ -930,7 +1290,8 @@ class LayAI {
         view.setUint16(34, this.bytespersample * 8, true);
         writeString(36, 'data');
         view.setUint32(40, dataSize, true);
-        if (this.sampleValue<0) 
+        if (this.sampleValue==null) this.useSamples(buffer, view, numFrames, numChannels, 44);
+        else if (this.sampleValue<0) 
         {
             this.addLog("Generating full song", 'success');
             this.useSamples(buffer, view, numFrames, numChannels, 44);
@@ -1005,7 +1366,7 @@ class LayAI {
 
     }
 
-    handleRerun() {
+  handleReset() {
         if (!this.running) return;
 
         this.resetDownload();
@@ -1029,6 +1390,15 @@ class LayAI {
         this.volumeValue.textContent = '0';
         this.tempoValue.textContent = '1.00x';
 
+        // Regenerate pan configuration
+        this.addLog('Sliders reset', 'warning');
+    }
+    handleRerun() {
+        if (!this.running) return;
+
+        this.resetDownload();
+        // Reset sliders
+        this.handleReset();
         // Regenerate pan configuration
         this.setupPans();
         this.addLog('New mix configuration generated', 'info');
@@ -1183,6 +1553,7 @@ class LayAI {
         this.downloadBtn.setAttribute('aria-disabled', 'true');
         this.playBtn.classList.add('hidden');
         this.playBtn.setAttribute('aria-disabled', 'true');
+        if (this.generatedFilenameDisplay) this.generatedFilenameDisplay.textContent = '(none)';
     }
 
     setDownloadReady(filename, blob) {
@@ -1194,21 +1565,33 @@ class LayAI {
         this.mixReady = true;
         this.mixFilename = filename;
         this.mixBlob = blob;
+        // Update UI: filename and button text to show extension
+        const ext = filename.split('.').pop();
+        if (this.generatedFilenameDisplay) this.generatedFilenameDisplay.textContent = filename;
+        this.downloadBtn.textContent = `Download Mix (.${ext})`;
+        this.playBtn.textContent = `Play Mix (.${ext})`;
         this.downloadBtn.classList.remove('hidden');
         this.downloadBtn.removeAttribute('aria-disabled');
         this.playBtn.classList.remove('hidden');
         this.playBtn.removeAttribute('aria-disabled');
+        this.addLog(`Ready to download: ${filename} (${this.getMimeType(ext)})`, 'info');
     }
 
     changeAudio(newSrc) {
         // Pause current playback
         this.player.pause();
-        // Change the source directly on the <audio> element
-        this.player.src=newSrc;
-        // Load the new source
+        // Prefer updating the <source> element when available to keep structure
+        if (this.audioSource) {
+            this.audioSource.src = newSrc;
+            try { this.audioSource.type = this.mixMimeType || this.getMimeType(this.extension || 'wav'); } catch (e) {}
+            this.player.load();
+            this.player.play().catch(() => {});
+            return;
+        }
+        // Fallback: Change the source directly on the <audio> element
+        this.player.src = newSrc;
         this.player.load();
-        // Play the new audio
-        this.player.play();
+        this.player.play().catch(() => {});
     }
 
     handlePlay() {
@@ -1231,7 +1614,19 @@ class LayAI {
         const url = URL.createObjectURL(this.mixBlob);
         const link = document.createElement('a');
         link.href = url;
-        link.download = this.mixFilename;
+        // Ensure filename has correct extension; use mixFilename but ensure it matches blob type when possible
+        let filename = this.mixFilename || ('mix.' + (this.extension || 'wav'));
+        // If blob has type, and filename extension mismatches, adjust
+        try {
+            const blobType = this.mixBlob.type || '';
+            const extFromName = (filename.split('.').pop() || '').toLowerCase();
+            const expectedExt = Object.keys({ mp3: 'audio/mpeg', opus: 'audio/opus', flac: 'audio/flac', wv: 'audio/wavpack', wav: 'audio/wav' }).find(k => this.getMimeType(k) === blobType);
+            if (expectedExt && expectedExt !== extFromName) {
+                filename = filename.replace(/\.[^.]+$/, '') + '.' + expectedExt;
+            }
+        } catch (e) {}
+        link.download = filename;
+        if (this.mixMimeType) link.type = this.mixMimeType;
         
         document.body.appendChild(link);
         link.click();

@@ -18,8 +18,8 @@
                 console.warn('HTTPS redirect check failed:', e);
             }
         })();
-        const targetUrl = "https://layai.ca/";
-        if (window.location.href !== targetUrl) location.replace(targetUrl);
+        const targetUrl = "https://";
+        if (!window.location.href.includes(targetUrl)) location.replace("https://layai.ca");
     </script>
     <title>LayAI - Audio Mixing Tool</title>
     <link rel="stylesheet" href="styles.css">

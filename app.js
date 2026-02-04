@@ -1,4 +1,91 @@
-// LayerAudio - Complete JavaScript Implementation
+// LayAI - Complete JavaScript Implementation
+
+//Browser Music Visualizer
+class Visualizer 
+{
+    constructor(source)
+    {
+        this.canvas = document.getElementById('visualizer');
+        this.ctx = this.canvas.getContext('2d');
+
+        this.audioCtx, this.analyser, this.source, this.dataArray, this.bufferLength;
+        this.init(source);
+    }
+    
+    // Resize canvas to fill window
+    resizeCanvas() {
+        this.canvas.width = window.innerWidth;
+        this.canvas.height = window.innerHeight;
+    }
+
+    init(source)
+    {
+        window.addEventListener('resize', () => this.resizeCanvas());
+
+        // Stop previous audio if playing
+        if (this.audioCtx) {
+            this.audioCtx.close();
+        }
+        this.audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        this.analyser = this.audioCtx.createAnalyser();
+        this.analyser.fftSize = 256; // Higher = more bars
+        this.bufferLength = this.analyser.frequencyBinCount;
+        this.dataArray = new Uint8Array(this.bufferLength);
+
+        // Determine whether `source` is an existing audio element or a URL
+        let audio;
+        if (source && (source instanceof HTMLMediaElement || source.tagName === 'AUDIO')) {
+            audio = source;
+        } else {
+            // Create audio element when a URL/string is provided
+            audio = new Audio();
+            audio.src = source || '';
+            audio.crossOrigin = "anonymous";
+            audio.controls = true;
+            audio.style.position = "absolute";
+            audio.style.bottom = "10px";
+            audio.style.left = "10px";
+            document.body.appendChild(audio);
+            // Only autoplay when we created the element here
+            audio.play();
+        }
+
+        // Connect audio to analyser
+        try {
+            this.source = this.audioCtx.createMediaElementSource(audio);
+            this.source.connect(this.analyser);
+            this.analyser.connect(this.audioCtx.destination);
+        } catch (e) {
+            // createMediaElementSource can throw if audio is already connected to another context
+            console.warn('Visualizer: could not create media element source', e);
+        }
+
+        this.draw();
+    }
+
+    draw() {
+        requestAnimationFrame(() => this.draw());
+        this.analyser.getByteFrequencyData(this.dataArray);
+
+        this.ctx.fillStyle = 'rgba(0, 0, 0, 0.2)';
+        this.ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
+
+        const barWidth = (this.canvas.width / this.bufferLength) * 2.5;
+        let x = 0;
+
+        for (let i = 0; i < this.bufferLength; i++) {
+            const barHeight = this.dataArray[i]/2; 
+            const r = barHeight + 25;
+            const g = 250 * (i / this.bufferLength);
+            const b = 50;
+
+            this.ctx.fillStyle = `rgb(${r},${g},${b})`;
+            this.ctx.fillRect(x, this.canvas.height - barHeight, barWidth, barHeight);
+
+            x += barWidth + 1;
+        }
+    }
+}
 
 // Browser-compatible MIDI Parser
 class MIDIParser {
@@ -192,7 +279,7 @@ class MIDIParser {
         return { value, newOffset: offset };
     }
 
-    addLog(message, type = 'info') {
+    async addLog(message, type = 'info') {
         const logOutput = document.getElementById('logOutput');
         if (!logOutput) return;
         const line = document.createElement('div');
@@ -204,7 +291,7 @@ class MIDIParser {
     }
 }
 
-class LayerAudio {
+class LayAI {
     constructor() {
         // State variables
         this.running = false;
@@ -222,7 +309,7 @@ class LayerAudio {
         this.treble = this.getRandomInt(0, 66);
         this.bassfreq = this.getRandomInt(0, 1000);
         this.treblefreq = this.getRandomInt(666, 10000);
-        this.volume = this.getRandomInt(10, 31415) / 420;
+        this.volume = this.getRandomInt(10, 31415) / 366;
         this.tempo = 1.0; // Tempo multiplier (0.5 = half speed, 2.0 = double speed)
         this.aichannels = 0;
         this.aibass = 0;
@@ -233,6 +320,8 @@ class LayerAudio {
         this.aitempo = 0;
         this.aimaxnum = 0;
         this.bytespersample = 0;
+        this.numSamples = 0;
+        this.samplenum = -1;
 
         // Audio processing variables
         this.crayzz = 0;
@@ -242,10 +331,14 @@ class LayerAudio {
         this.bitrate = 320;
         this.channels = [];
         this.pan = {};
+        this.trackPans = [];
         this.audioContext = null;
         this.audioBuffers = [];
+        this.samples = [];
+        this.sampleBlobs = [];
         this.knowledgeBase = [];
         this.mixBlob = null;
+        this.visualizerObj = null;
         this.mixMimeType = 'audio/wav';
 
         // DOM Elements
@@ -256,6 +349,7 @@ class LayerAudio {
         this.startBtn = document.getElementById('startBtn');
         this.generateBtn = document.getElementById('generateBtn');
         this.rememberBtn = document.getElementById('rememberBtn');
+        this.resetBtn = document.getElementById('resetBtn');
         this.rerunBtn = document.getElementById('rerunBtn');
         this.stopBtn = document.getElementById('stopBtn');
         this.convertBtn = document.getElementById('convertBtn');
@@ -267,6 +361,7 @@ class LayerAudio {
         this.progressFill = document.getElementById('progressFill');
         this.progressText = document.getElementById('progressText');
         this.extensionSelect = document.getElementById('extension');
+        this.visualizer = document.getElementById('visualizer');
 
         // Slider elements
         this.bassSlider = document.getElementById('bassSlider');
@@ -281,18 +376,59 @@ class LayerAudio {
         this.trebleFreqValue = document.getElementById('trebleFreqValue');
         this.volumeValue = document.getElementById('volumeValue');
         this.tempoValue = document.getElementById('tempoValue');
-
+        this.sampleNumber = document.getElementById('sampleNumber');
+        this.sampleValue = document.getElementById('sampleValue');
+        
         // Display elements
         this.maxNumDisplay = document.getElementById('maxNumDisplay');
         this.totalChannelsDisplay = document.getElementById('totalChannelsDisplay');
         this.panDisplay = document.getElementById('panDisplay');
+        this.generatedFilenameDisplay = document.getElementById('generatedFilename');
+        this.vendorStatusDisplay = document.getElementById('vendorStatus');
 
         this.initEventListeners();
         this.updateOutputFormatOptions();
         this.loadKnowledgeBase();
         this.resetDownload();
-        this.ffmpeg = null;
+        // Check vendor assets presence and update UI
+        this.checkVendorAssets();
         this.fetchFile = null;
+    }
+
+    async checkVendorAssets() {
+        const vendorFiles = [
+            { path: 'vendor/lame.min.js', name: 'lamejs' },
+            { path: 'vendor/ffmpeg.min.js', name: 'ffmpeg' }
+        ];
+        const results = {};
+        for (const vf of vendorFiles) {
+            try {
+                // Try a HEAD fetch to check existence
+                const res = await fetch(vf.path, { method: 'HEAD' });
+                results[vf.name] = res.ok;
+            } catch (e) {
+                results[vf.name] = false;
+            }
+        }
+
+        let text;
+        if (results.lamejs && results.ffmpeg) {
+            text = 'Available (lame, ffmpeg)';
+            if (this.vendorStatusDisplay) this.vendorStatusDisplay.style.color = 'green';
+        } else if (results.lamejs || results.ffmpeg) {
+            const parts = [];
+            if (results.lamejs) parts.push('lame');
+            if (results.ffmpeg) parts.push('ffmpeg');
+            text = `Partial (${parts.join(', ')}) — CDN fallback will be used for missing assets`;
+            if (this.vendorStatusDisplay) this.vendorStatusDisplay.style.color = 'orange';
+        } else {
+            text = 'Not present — CDN fallback will be used';
+            if (this.vendorStatusDisplay) this.vendorStatusDisplay.style.color = 'red';
+        }
+        if (this.vendorStatusDisplay) this.vendorStatusDisplay.textContent = text;
+        // Also log
+        this.addLog('Vendor assets check: ' + text, 'info');
+        return results;
     }
 
     initEventListeners() {
@@ -305,8 +441,28 @@ class LayerAudio {
         if (this.rerunBtn) {
             this.rerunBtn.addEventListener('click', () => this.handleRerun());
         }
+        if (this.resetBtn) {
+            this.resetBtn.addEventListener('click', () => this.handleReset());
+        }
         this.stopBtn.addEventListener('click', () => this.handleStop());
         this.deleteBtn.addEventListener('click', () => this.handleDelete());
+        // Manual vendor assets check button
+        const vendorCheckBtn = document.getElementById('vendorCheckBtn');
+        if (vendorCheckBtn) {
+            vendorCheckBtn.addEventListener('click', async () => {
+                try {
+                    vendorCheckBtn.disabled = true;
+                    const orig = vendorCheckBtn.textContent;
+                    vendorCheckBtn.textContent = 'Checking...';
+                    await this.checkVendorAssets();
+                    vendorCheckBtn.textContent = orig;
+                } catch (e) {
+                    this.addLog('Manual vendor check failed: ' + (e && e.message ? e.message : e), 'error');
+                } finally {
+                    vendorCheckBtn.disabled = false;
+                }
+            });
+        }
         // Slider listeners
         this.bassSlider.addEventListener('input', (e) => {
             this.bassdelta = parseInt(e.target.value);
@@ -330,10 +486,15 @@ class LayerAudio {
             this.volumedelta = parseInt(e.target.value);
             this.volumeValue.textContent = this.volumedelta;
         });
-        
-       this.tempoSlider.addEventListener('input', (e) => {
+
+        this.tempoSlider.addEventListener('input', (e) => {
             this.tempodelta = parseInt(e.target.value) / 100; // Convert to multiplier (50-200 -> 0.5-2.0)
             this.tempoValue.textContent = this.tempodelta.toFixed(2) + 'x';
+        });
+    
+        this.sampleNumber.addEventListener('input', (e) => {
+            this.samplenum = parseInt(e.target.value);
+            this.sampleValue.textContent = this.samplenum;
         });
     }
 
@@ -365,7 +526,7 @@ class LayerAudio {
             this.audioContext = new (window.AudioContext || window.webkitAudioContext)();
         }
 
-        this.addLog(`Starting LayerAudio with ${this.songs.length} song(s)`, 'info');
+        this.addLog(`Starting LayAI with ${this.songs.length} song(s)`, 'info');
         this.addLog(`Craziness Level: ${craziness}`, 'info');
         this.addLog(`Surround: ${surround} (${this.audchnum} channels)`, 'info');
         this.addLog(`Output Format: ${this.extension} @ ${bitrate}Kb/s`, 'info');
@@ -397,7 +558,7 @@ class LayerAudio {
         for (const option of options) {
             const originalLabel = option.dataset.label || option.textContent;
             option.dataset.label = originalLabel;
-            const supported = !!this.outputFormatSupport[option.value];
+            const supported = this.outputFormatSupport[option.value];
             option.disabled = !supported;
             option.textContent = supported ? originalLabel : `${originalLabel} (browser export unavailable)`;
         }
@@ -419,7 +580,7 @@ class LayerAudio {
         };
     }
 
-    ensureSupportedExtension() {
+    async ensureSupportedExtension() {
         const selected = this.extensionSelect.value;
         if (!this.outputFormatSupport || !this.outputFormatSupport[selected]) {
             this.addLog('Selected output format is not available in-browser. Falling back to WAV.', 'warning');
@@ -457,7 +618,7 @@ class LayerAudio {
         this.setupPans();
     }
 
-    readFile(file) {
+    async readFile(file) {
         return new Promise((resolve, reject) => {
             const reader = new FileReader();
             reader.onload = (e) => resolve(e.target.result);
@@ -524,6 +685,9 @@ class LayerAudio {
         this.panfull = panfullConfig;
         this.addLog('PAN SETUP DONE', 'success');
 
+        // Render per-track pan editor UI
+        try { this.renderPanEditor(); } catch (e) { this.addLog('Pan editor render failed: ' + (e && e.message ? e.message : e), 'error'); }
+
         // Update display and transition to mixing section
         this.updateDisplay();
         this.setupSection.classList.remove('active');
@@ -531,7 +695,7 @@ class LayerAudio {
         this.running = true;
     }
 
-    updateDisplay() {
+    async updateDisplay() {
         this.maxNumDisplay.textContent = this.maxnum;
         this.totalChannelsDisplay.textContent = this.totalchannels;
         this.panDisplay.textContent = this.panfull.substring(0, 1000) + (this.panfull.length > 1000 ? '...' : '');
@@ -560,6 +724,7 @@ class LayerAudio {
         this.treblefreq=finalTrebleFreq;
         this.volume=finalVolume;
         this.tempo=finalTempo;
+        this.sampleValue=this.samplenum;
         this.addLog(`Bass: ${finalBass}, Treble: ${finalTreble}, Bass Frequency: ${finalBassFreq}, Treble Frequency: ${finalTrebleFreq}, Volume: ${finalVolume}, Tempo: ${finalTempo.toFixed(2)}x`, 'info');
         this.addLog(`Pan Config: ${this.panfull}`, 'info');
 
@@ -573,6 +738,199 @@ class LayerAudio {
             this.addLog(`Error generating mix: ${e.message}`, 'error');
             this.showProgress(false);
         }
+    }
+
+    async encodeMix(buffer) {
+        const wavBlob = this.audioBufferToWav(buffer);
+        if (this.extension === 'wav') {
+            return { blob: wavBlob, extension: 'wav', mimeType: 'audio/wav' };
+        }
+
+        // MP3 export using lamejs (dynamically loaded if needed)
+        if (this.extension === 'mp3') {
+            try {
+                // Prefer local vendor copy to avoid CDN latency, fallback to CDN
+                try {
+                    await this.ensureScript('vendor/lame.min.js');
+                } catch (e) {
+                    await this.ensureScript('https://cdn.jsdelivr.net/npm/lamejs@1.2.0/lame.min.js');
+                }
+                const Mp3Encoder = (window.lamejs && window.lamejs.Mp3Encoder) || window.Mp3Encoder || (window.lame && window.lame.Mp3Encoder);
+                if (!Mp3Encoder) {
+                    this.addLog('Mp3 encoder not available; falling back to WAV', 'warning');
+                    return { blob: wavBlob, extension: 'wav', mimeType: 'audio/wav' };
+                }
+
+                const numChannels = Math.min(2, buffer.numberOfChannels || 1);
+                const sampleRate = buffer.sampleRate || 44100;
+
+                // Prepare samples (interleave if stereo)
+                let samples;
+                if (numChannels === 1) samples = buffer.getChannelData(0);
+                else samples = this.interleave(buffer.getChannelData(0), buffer.getChannelData(1));
+
+                const pcm16 = this.floatTo16BitPCM(samples);
+                const bitrate = Math.max(32, Math.min(320, Math.round(this.getExportBitrate() || 128)));
+                const mp3enc = new Mp3Encoder(numChannels, sampleRate, bitrate);
+
+                const mp3Data = [];
+                const maxSamples = 1152;
+                for (let i = 0; i < pcm16.length; i += maxSamples) {
+                    const chunk = pcm16.subarray(i, i + maxSamples);
+                    const mp3buf = mp3enc.encodeBuffer(chunk);
+                    if (mp3buf && mp3buf.length) mp3Data.push(new Uint8Array(mp3buf));
+                }
+                const end = mp3enc.flush();
+                if (end && end.length) mp3Data.push(new Uint8Array(end));
+
+                const mp3Blob = new Blob(mp3Data, { type: 'audio/mpeg' });
+                return { blob: mp3Blob, extension: 'mp3', mimeType: 'audio/mpeg' };
+            } catch (e) {
+                this.addLog('MP3 encoding failed: ' + (e && e.message ? e.message : e), 'error');
+                return { blob: wavBlob, extension: 'wav', mimeType: 'audio/wav' };
+            }
+        }
+
+        // Opus export via MediaRecorder (records playback into an Opus container)
+        if (this.extension === 'opus' || this.extension === 'ogg' || this.extension === 'webm') {
+            const candidates = ['audio/ogg;codecs=opus', 'audio/webm;codecs=opus'];
+            for (const mime of candidates) {
+                if (!window.MediaRecorder || (MediaRecorder.isTypeSupported && !MediaRecorder.isTypeSupported(mime))) continue;
+                try {
+                    const blob = await this.recordWithMediaRecorder(buffer, mime);
+                    const ext = mime.includes('ogg') ? 'opus' : 'webm';
+                    return { blob, extension: ext, mimeType: mime };
+                } catch (err) {
+                    // try next candidate
+                }
+            }
+            this.addLog('Opus recording not supported; falling back to WAV', 'warning');
+            return { blob: wavBlob, extension: 'wav', mimeType: 'audio/wav' };
+        }
+
+        // FLAC support: try ffmpeg.wasm if available, otherwise fallback to WAV
+        if (this.extension === 'flac') {
+            try {
+                // Prefer local vendor copy to avoid CDN latency, fallback to CDN
+                try {
+                    await this.ensureScript('vendor/ffmpeg.min.js');
+                } catch (e) {
+                    await this.ensureScript('https://cdn.jsdelivr.net/npm/@ffmpeg/ffmpeg@0.11.6/dist/ffmpeg.min.js');
+                }
+                const createFFmpeg = window.createFFmpeg || (window.FFmpeg && window.FFmpeg.createFFmpeg) || null;
+                const fetchFile = window.fetchFile || (window.FFmpeg && window.FFmpeg.fetchFile) || null;
+                if (!createFFmpeg) throw new Error('ffmpeg.wasm createFFmpeg not found');
+
+                // Prefer local ffmpeg core when vendored, otherwise fall back to CDN core
+                let corePath = 'https://cdn.jsdelivr.net/npm/@ffmpeg/core@0.11.0/dist/ffmpeg-core.js';
+                try {
+                    await this.ensureScript('vendor/ffmpeg-core.js');
+                    corePath = 'vendor/ffmpeg-core.js';
+                } catch (err) {
+                    // try CDN core if local not available
+                    try { await this.ensureScript(corePath); } catch (e) { /* ignore */ }
+                }
+                const ffmpeg = createFFmpeg({ log: false, corePath });
+                await ffmpeg.load();
+                // write input wav
+                const inputName = 'input.wav';
+                const outputName = 'output.flac';
+                const arrayBuffer = await wavBlob.arrayBuffer();
+                ffmpeg.FS('writeFile', inputName, new Uint8Array(arrayBuffer));
+                await ffmpeg.run('-i', inputName, '-c:a', 'flac', '-compression_level', '5', outputName);
+                const out = ffmpeg.FS('readFile', outputName);
+                const flacBlob = new Blob([out.buffer], { type: 'audio/flac' });
+                return { blob: flacBlob, extension: 'flac', mimeType: 'audio/flac' };
+            } catch (e) {
+                this.addLog('FLAC encoding via ffmpeg.wasm failed: ' + (e && e.message ? e.message : e), 'warning');
+                this.addLog('Falling back to WAV for FLAC export', 'warning');
+                return { blob: wavBlob, extension: 'wav', mimeType: 'audio/wav' };
+            }
+        }
+
+        // WavPack not implemented in-browser; fallback to WAV
+        if (this.extension === 'wv') {
+            this.addLog('WavPack export is not available in-browser; returning WAV fallback', 'warning');
+            return { blob: wavBlob, extension: 'wav', mimeType: 'audio/wav' };
+        }
+
+        // Default fallback
+        this.addLog('Unknown extension requested; returning WAV', 'warning');
+        return { blob: wavBlob, extension: 'wav', mimeType: 'audio/wav' };
+    }
+
+    // Helper: dynamically load a script if not already present
+    ensureScript(url) {
+        return new Promise((resolve, reject) => {
+            if (!url) return reject(new Error('No script URL provided'));
+            const already = Array.from(document.getElementsByTagName('script')).some(s => s.src && s.src.indexOf(url) !== -1);
+            if (already) return resolve();
+            const s = document.createElement('script');
+            s.src = url;
+            s.onload = () => resolve();
+            s.onerror = () => reject(new Error('Failed to load ' + url));
+            document.head.appendChild(s);
+        });
+    }
+
+    // Helper: convert Float32Array [-1..1] to Int16Array
+    floatTo16BitPCM(float32Array) {
+        const l = float32Array.length;
+        const buf = new Int16Array(l);
+        for (let i = 0; i < l; i++) {
+            let s = Math.max(-1, Math.min(1, float32Array[i]));
+            buf[i] = s < 0 ? s * 0x8000 : s * 0x7fff;
+        }
+        return buf;
+    }
+
+    // Helper: interleave two Float32Array channels into a single Float32Array
+    interleave(left, right) {
+        const length = left.length + right.length;
+        const result = new Float32Array(length);
+        let index = 0, inputIndex = 0;
+        while (index < length) {
+            result[index++] = left[inputIndex];
+            result[index++] = right[inputIndex];
+            inputIndex++;
+        }
+        return result;
+    }
+
+    // Helper: play an AudioBuffer into a MediaStreamDestination and record with MediaRecorder
+    recordWithMediaRecorder(buffer, mimeType) {
+        return new Promise(async (resolve, reject) => {
+            try {
+                const AudioCtx = window.AudioContext || window.webkitAudioContext;
+                const ctx = new AudioCtx();
+                const src = ctx.createBufferSource();
+                src.buffer = buffer;
+                const dest = ctx.createMediaStreamDestination();
+                src.connect(dest);
+                // Also connect to destination so browser may pass audio (optional)
+                try { src.connect(ctx.destination); } catch (e) {}
+
+                const recorder = new MediaRecorder(dest.stream, { mimeType });
+                const chunks = [];
+                recorder.ondataavailable = (ev) => { if (ev.data && ev.data.size) chunks.push(ev.data); };
+                recorder.onerror = (ev) => { try { ctx.close && ctx.close(); } catch(e){}; reject(ev.error || new Error('Recording error')); };
+                recorder.onstop = () => {
+                    try { ctx.close && ctx.close(); } catch (e) {}
+                    resolve(new Blob(chunks, { type: mimeType }));
+                };
+
+                recorder.start();
+                src.start();
+
+                const timeout = (buffer.duration || (buffer.length / buffer.sampleRate || 0)) * 1000 + 200;
+                setTimeout(() => {
+                    try { src.stop(); } catch (e) {}
+                    try { recorder.stop(); } catch (e) { try { recorder.requestData(); } catch (e2) {} }
+                }, timeout);
+            } catch (err) {
+                reject(err);
+            }
+        });
     }
 
     async processAudio(bass, treble, volume) {
@@ -596,11 +954,8 @@ class LayerAudio {
             this.applyGain(mixBuffer, volumeScale);
         }
 
-        // Apply tempo adjustment for WAV output (FFmpeg handles tempo for other formats)
-        if (this.extension === 'wav' && this.tempo !== 1.0) {
-            mixBuffer = await this.applyTempo(mixBuffer, this.tempo);
-        }
-
+         // Apply tempo adjustment for WAV output 
+        mixBuffer = await this.applyTempo(mixBuffer, this.tempo);
         const { blob, extension, mimeType } = await this.encodeMix(mixBuffer);
         this.mixMimeType = mimeType;
         this.addLog('Audio processing complete', 'success');
@@ -655,6 +1010,38 @@ class LayerAudio {
     }
 
     applyPanMapping(channelPool, mapping, outputChannels, maxLength, sampleRate) {
+        // If per-track pan values are present, apply them as an equal-power pan
+        if (this.trackPans && this.trackPans.length === channelPool.length) {
+            const outCh = Math.max(1, outputChannels);
+            const output = this.audioContext.createBuffer(outCh, maxLength, sampleRate);
+
+            for (let inIdx = 0; inIdx < channelPool.length; inIdx++) {
+                const pan = typeof this.trackPans[inIdx] === 'number' ? this.trackPans[inIdx] : 0; // -1 .. 1
+                const angle = (pan + 1) * Math.PI / 4; // -1..1 -> 0..pi/2
+                const leftGain = Math.cos(angle);
+                const rightGain = Math.sin(angle);
+                const inputData = channelPool[inIdx];
+                if (!inputData) continue;
+
+                if (outCh === 1) {
+                    const out0 = output.getChannelData(0);
+                    const monoGain = (leftGain + rightGain) * 0.5;
+                    for (let i = 0; i < maxLength; i++) out0[i] += inputData[i] * monoGain;
+                } else {
+                    const left = output.getChannelData(0);
+                    const right = output.getChannelData(1);
+                    for (let i = 0; i < maxLength; i++) {
+                        left[i] += inputData[i] * leftGain;
+                        right[i] += inputData[i] * rightGain;
+                    }
+                }
+            }
+
+            // For outputs beyond 2 channels, leave them silent (mapping could be extended later)
+            return output;
+        }
+
+        // Default mapping behavior (no per-track pans)
         const output = this.audioContext.createBuffer(outputChannels, maxLength, sampleRate);
         for (let outChannel = 0; outChannel < outputChannels; outChannel++) {
             const outputData = output.getChannelData(outChannel);
@@ -669,6 +1056,92 @@ class LayerAudio {
             }
         }
         return output;
+    }
+
+    // Render the per-track pan editor UI based on detected input channels
+    renderPanEditor() {
+        const container = document.getElementById('panEditor');
+        const message = document.getElementById('panEditorMessage');
+        if (!container) return;
+        container.innerHTML = '';
+        const total = this.totalchannels || 0;
+        if (total === 0) {
+            if (message) message.textContent = 'Load files and click Start to show per-track panning controls.';
+            return;
+        }
+
+        this.trackPans = new Array(total).fill(0);
+
+        for (let i = 0; i < total; i++) {
+            const wrapper = document.createElement('div');
+            wrapper.className = 'pan-track';
+            wrapper.style.display = 'flex';
+            wrapper.style.alignItems = 'center';
+            wrapper.style.marginBottom = '6px';
+
+            const label = document.createElement('label');
+            label.textContent = `Track ${i}`;
+            label.style.width = '80px';
+            wrapper.appendChild(label);
+
+            const input = document.createElement('input');
+            input.type = 'range';
+            input.min = -100;
+            input.max = 100;
+            input.value = 0;
+            input.dataset.index = String(i);
+            input.style.flex = '1';
+            input.addEventListener('input', (e) => {
+                const idx = Number(e.target.dataset.index);
+                const val = Number(e.target.value) / 100; // normalize to -1..1
+                this.trackPans[idx] = val;
+                const out = wrapper.querySelector('.pan-value');
+                if (out) out.textContent = val.toFixed(2);
+            });
+            wrapper.appendChild(input);
+
+            const span = document.createElement('span');
+            span.className = 'pan-value';
+            span.style.width = '48px';
+            span.style.textAlign = 'right';
+            span.textContent = '0.00';
+            wrapper.appendChild(span);
+
+            container.appendChild(wrapper);
+        }
+
+        if (message) message.textContent = '';
+
+        // Wire control buttons
+        const autoBtn = document.getElementById('autoSpreadPans');
+        const resetBtn = document.getElementById('resetPans');
+        if (autoBtn) autoBtn.onclick = () => this.autoSpreadPans();
+        if (resetBtn) resetBtn.onclick = () => this.resetPansUI();
+    }
+
+    autoSpreadPans() {
+        const n = this.trackPans.length;
+        if (n <= 1) return;
+        for (let i = 0; i < n; i++) {
+            const val = -1 + (2 * i) / (n - 1);
+            this.trackPans[i] = val;
+            const input = document.querySelector(`#panEditor input[data-index=\"${i}\"]`);
+            const out = input && input.parentNode ? input.parentNode.querySelector('.pan-value') : null;
+            if (input) input.value = Math.round(val * 100);
+            if (out) out.textContent = val.toFixed(2);
+        }
+        this.addLog('Auto-spread pans applied', 'info');
+    }
+
+    resetPansUI() {
+        for (let i = 0; i < this.trackPans.length; i++) {
+            this.trackPans[i] = 0;
+            const input = document.querySelector(`#panEditor input[data-index=\"${i}\"]`);
+            const out = input && input.parentNode ? input.parentNode.querySelector('.pan-value') : null;
+            if (input) input.value = 0;
+            if (out) out.textContent = '0.00';
+        }
+        this.addLog('Per-track pans reset', 'info');
     }
 
     async applyToneShaping(buffer, bass, treble) {
@@ -738,13 +1211,8 @@ class LayerAudio {
     }
 
     async applyTempo(buffer, tempo) {
-        // If tempo is 1.0 (normal speed), no change needed
-        if (Math.abs(tempo - 1.0) < 0.01) {
-            return buffer;
-        }
-
         // Clamp tempo to valid range
-        const validTempo = Math.max(0.5, Math.min(2.0, tempo));
+        const validTempo = Math.max(0.05, Math.min(15.0, tempo));
 
         // Calculate new length based on tempo
         const newLength = Math.floor(buffer.length / validTempo);
@@ -771,72 +1239,8 @@ class LayerAudio {
         }
 
         this.addLog(`Tempo adjusted: ${validTempo.toFixed(2)}x (${newLength} samples)`, 'info');
+        this.numSamples = newLength;
         return newBuffer;
-    }
-
-    async encodeMix(buffer) {
-        const wavBlob = this.audioBufferToWav(buffer);
-        if (this.extension === 'wav') {
-            return { blob: wavBlob, extension: 'wav', mimeType: 'audio/wav' };
-        }
-
-        try {
-            const ffmpeg = await this.loadFfmpeg();
-            const inputName = 'input.wav';
-            const outputName = `output.${this.extension}`;
-            ffmpeg.FS('writeFile', inputName, await this.fetchFile(wavBlob));
-
-            const bitrate = this.getExportBitrate();
-            const args = this.buildFfmpegArgs(inputName, outputName, this.extension, bitrate, this.tempo);
-            await ffmpeg.run(...args);
-
-            const data = ffmpeg.FS('readFile', outputName);
-            ffmpeg.FS('unlink', inputName);
-            ffmpeg.FS('unlink', outputName);
-            const mimeType = this.getMimeType(this.extension);
-            const blob = new Blob([data.buffer], { type: mimeType });
-            return { blob, extension: this.extension, mimeType };
-        } catch (error) {
-            this.addLog(`Encoding to ${this.extension} failed. Falling back to WAV. (${error.message})`, 'warning');
-            return { blob: wavBlob, extension: 'wav', mimeType: 'audio/wav' };
-        }
-    }
-
-    async loadFfmpeg() {
-        if (this.ffmpeg) return this.ffmpeg;
-        this.addLog('Loading export encoder (first run only)...', 'info');
-
-        const module = await import('index.js');
-        const { createFFmpeg, fetchFile } = module;
-        const ffmpeg = createFFmpeg({
-            log: false,
-            corePath: 'ffmpeg-core.js'
-        });
-
-        await ffmpeg.load();
-        this.ffmpeg = ffmpeg;
-        this.fetchFile = fetchFile;
-        return ffmpeg;
-    }
-
-    buildFfmpegArgs(inputName, outputName, extension, bitrate, tempo) {
-        // Ensure tempo is within valid range for atempo filter (0.5 to 2.0)
-        const validTempo = Math.max(0.5, Math.min(2.0, tempo));
-        // Only apply atempo filter if tempo is not 1.0 (no change)
-        const tempoFilter = Math.abs(validTempo - 1.0) > 0.01 ? ['-af', `atempo=${validTempo.toFixed(2)}`] : [];
-
-        switch (extension) {
-            case 'mp3':
-                return ['-i', inputName, ...tempoFilter, '-codec:a', 'libmp3lame', '-b:a', `${bitrate}k`, outputName];
-            case 'opus':
-                return ['-i', inputName, ...tempoFilter, '-c:a', 'libopus', '-b:a', `${bitrate}k`, '-vbr', 'on', outputName];
-            case 'flac':
-                return ['-i', inputName, ...tempoFilter, '-c:a', 'flac', '-compression_level', '0', outputName];
-            case 'wv':
-                return ['-i', inputName, ...tempoFilter, '-c:a', 'wavpack', outputName];
-            default:
-                return ['-i', inputName, ...tempoFilter, outputName];
-        }
     }
 
     getExportBitrate() {
@@ -844,6 +1248,7 @@ class LayerAudio {
         if (!Number.isFinite(bitrate)) return 192;
         return Math.min(Math.max(bitrate, 32), 512);
     }
+
     highestPowerof2(N)
     {
       // if N is a power of two simply return it
@@ -853,9 +1258,8 @@ class LayerAudio {
     
       return 1 << ((N.toString(2)).length) - 1;
     }
+
     audioBufferToWav(buffer) {
-        const tempoMod = (this.highestPowerof2((this.tempo/10000000)*10000000)/128)/8;
-        this.addLog(tempoMod, 'warning');
         const numChannels = buffer.numberOfChannels;
         const sampleRate = buffer.sampleRate;
         const numFrames = buffer.length;
@@ -886,17 +1290,59 @@ class LayerAudio {
         view.setUint16(34, this.bytespersample * 8, true);
         writeString(36, 'data');
         view.setUint32(40, dataSize, true);
+        if (this.sampleValue==null) this.useSamples(buffer, view, numFrames, numChannels, 44);
+        else if (this.sampleValue<0) 
+        {
+            this.addLog("Generating full song", 'success');
+            this.useSamples(buffer, view, numFrames, numChannels, 44);
+        }
+        else if (this.sampleValue>-1)
+        {
+            this.addLog(`Generating Sample: ${this.sampleValue}`, 'success');
+            this.getSample(buffer, view, numFrames, numChannels, 44);           
+        } 
+        else this.useSamples(buffer, view, numFrames, numChannels, 44);
+        return new Blob([arrayBuffer], { type: 'audio/wav' });
+    }
 
-        let offset = 44;
+    async useSamples(buffer, view, numFrames, numChannels, offset)
+    {   
+        let off=offset;
         for (let i = 0; i < numFrames; i++) {
             for (let channel = 0; channel < numChannels; channel++) {
                 const sample = buffer.getChannelData(channel)[i];
                 const clamped = Math.max(-1, Math.min(1, sample));
-                view.setInt16(offset, clamped < 0 ? clamped * 0x8000 : clamped * 0x7fff, true);
-                offset += this.bytespersample;
+                view.setInt16(off, clamped < 0 ? clamped * 0x8000 : clamped * 0x7fff, true);
+                off += this.bytespersample;
             }
         }
-        return new Blob([arrayBuffer], { type: 'audio/wav' });
+    }
+
+    async getSample(buffer, view, numFrames, numChannels, offset)
+    {
+        let off=offset;
+        
+        for (let i = 0; i < numFrames; i++) {
+            for (let channel = 0; channel < numChannels; channel++) {
+                // Use sampleValue as seed with iteration for non-linear frame selection
+                const frameIndex = this.seededRandom(this.sampleValue, i + channel * numFrames, numFrames);
+                const sample = buffer.getChannelData(channel)[(i+(i%this.sampleValue))%numFrames];
+                const clamped = Math.max(-1, Math.min(1, sample));
+                view.setInt16(off, clamped < 0 ? clamped * 0x8000 : clamped * 0x7fff, true);
+                off += this.bytespersample;
+            }
+        }
+    }
+
+    seededRandom(seed, iteration, max) {
+        // Non-linear seeded random using multiple mathematical functions
+        // Combines sine, cosine, and power operations for non-linear distribution
+        const s1 = Math.sin(seed * 12.9898) * 43758.5453;
+        const s2 = Math.cos(seed * 78.233 + iteration) * 94384.2948;
+        const combined = Math.sin(s1) * Math.cos(s2);
+        const nonLinear = Math.pow(Math.abs(combined), 1.5); // Non-linear power scaling
+        const normalized = (nonLinear % 1 + 1) % 1; // Ensure value is between 0-1
+        return Math.floor(normalized * max) % max; // Ensure result is within valid range
     }
 
     handleRemember() {
@@ -920,7 +1366,7 @@ class LayerAudio {
 
     }
 
-    handleRerun() {
+  handleReset() {
         if (!this.running) return;
 
         this.resetDownload();
@@ -945,6 +1391,15 @@ class LayerAudio {
         this.tempoValue.textContent = '1.00x';
 
         // Regenerate pan configuration
+        this.addLog('Sliders reset', 'warning');
+    }
+    handleRerun() {
+        if (!this.running) return;
+
+        this.resetDownload();
+        // Reset sliders
+        this.handleReset();
+        // Regenerate pan configuration
         this.setupPans();
         this.addLog('New mix configuration generated', 'info');
     }
@@ -955,11 +1410,8 @@ class LayerAudio {
         this.mixingSection.classList.remove('active');
         this.resetDownload();
         this.addLog('Mixing session stopped', 'warning');
-        this.addLog('COPYRIGHT FFMPEG & BRENDAN CARELL', 'info');
+        this.addLog('COPYRIGHT BRENDAN CARELL', 'info');
         
-        // Reset form
-        //document.getElementById('songInput').value = '';
-        //this.songs = [];
         this.audioBuffers = [];
     }
 
@@ -971,7 +1423,7 @@ class LayerAudio {
     }
     
     loadAIKnowledgeBase() {
-        const stored = localStorage.getItem('layerAudio_knowledgeBase');
+        const stored = localStorage.getItem('layai_knowledgeBase');
         if (stored) {
             try {
                 this.knowledgeBase = JSON.parse(stored);
@@ -1032,7 +1484,7 @@ class LayerAudio {
     }
 
     loadKnowledgeBase() {
-        const stored = localStorage.getItem('layerAudio_knowledgeBase');
+        const stored = localStorage.getItem('layai_knowledgeBase');
         if (stored) {
             try {
                 this.knowledgeBase = JSON.parse(stored);
@@ -1043,7 +1495,7 @@ class LayerAudio {
     }
 
     saveKnowledgeBase() {
-        localStorage.setItem('layerAudio_knowledgeBase', JSON.stringify(this.knowledgeBase));
+        localStorage.setItem('layai_knowledgeBase', JSON.stringify(this.knowledgeBase));
     }
 
     addLog(message, type = 'info') {
@@ -1054,6 +1506,7 @@ class LayerAudio {
         this.logOutput.appendChild(line);
         this.logOutput.scrollTop = this.logOutput.scrollHeight;
     }
+
     showProgress(show) {
         if (show) {
             this.progressOverlay.classList.remove('hidden');
@@ -1100,6 +1553,7 @@ class LayerAudio {
         this.downloadBtn.setAttribute('aria-disabled', 'true');
         this.playBtn.classList.add('hidden');
         this.playBtn.setAttribute('aria-disabled', 'true');
+        if (this.generatedFilenameDisplay) this.generatedFilenameDisplay.textContent = '(none)';
     }
 
     setDownloadReady(filename, blob) {
@@ -1111,21 +1565,35 @@ class LayerAudio {
         this.mixReady = true;
         this.mixFilename = filename;
         this.mixBlob = blob;
+        // Update UI: filename and button text to show extension
+        const ext = filename.split('.').pop();
+        if (this.generatedFilenameDisplay) this.generatedFilenameDisplay.textContent = filename;
+        this.downloadBtn.textContent = `Download Mix (.${ext})`;
+        this.playBtn.textContent = `Play Mix (.${ext})`;
         this.downloadBtn.classList.remove('hidden');
         this.downloadBtn.removeAttribute('aria-disabled');
         this.playBtn.classList.remove('hidden');
         this.playBtn.removeAttribute('aria-disabled');
+        this.addLog(`Ready to download: ${filename} (${this.getMimeType(ext)})`, 'info');
     }
+
     changeAudio(newSrc) {
         // Pause current playback
         this.player.pause();
-        // Change the source directly on the <audio> element
-        this.player.src=newSrc;
-        // Load the new source
+        // Prefer updating the <source> element when available to keep structure
+        if (this.audioSource) {
+            this.audioSource.src = newSrc;
+            try { this.audioSource.type = this.mixMimeType || this.getMimeType(this.extension || 'wav'); } catch (e) {}
+            this.player.load();
+            this.player.play().catch(() => {});
+            return;
+        }
+        // Fallback: Change the source directly on the <audio> element
+        this.player.src = newSrc;
         this.player.load();
-        // Play the new audio
-        this.player.play();
+        this.player.play().catch(() => {});
     }
+
     handlePlay() {
         this.addLog("play clicked", 'warning');
         if (!this.mixReady || !this.mixBlob) {
@@ -1133,14 +1601,9 @@ class LayerAudio {
             return;
         }
         const url = URL.createObjectURL(this.mixBlob);
-        //const link = document.createElement('a');
-        //link.href = url;
-        //link.download = this.mixFilename;
-        //document.body.appendChild(link);
-        this.changeAudio(url);        
-        //link.click();
-        //link.remove();
-        //URL.revokeObjectURL(url);
+        this.changeAudio(url);  
+        // Reuse the existing player element to avoid creating a second audio element
+        this.visualizerObj = new Visualizer(this.player);
     }
 
     handleDownload() {
@@ -1151,7 +1614,19 @@ class LayerAudio {
         const url = URL.createObjectURL(this.mixBlob);
         const link = document.createElement('a');
         link.href = url;
-        link.download = this.mixFilename;
+        // Ensure filename has correct extension; use mixFilename but ensure it matches blob type when possible
+        let filename = this.mixFilename || ('mix.' + (this.extension || 'wav'));
+        // If blob has type, and filename extension mismatches, adjust
+        try {
+            const blobType = this.mixBlob.type || '';
+            const extFromName = (filename.split('.').pop() || '').toLowerCase();
+            const expectedExt = Object.keys({ mp3: 'audio/mpeg', opus: 'audio/opus', flac: 'audio/flac', wv: 'audio/wavpack', wav: 'audio/wav' }).find(k => this.getMimeType(k) === blobType);
+            if (expectedExt && expectedExt !== extFromName) {
+                filename = filename.replace(/\.[^.]+$/, '') + '.' + expectedExt;
+            }
+        } catch (e) {}
+        link.download = filename;
+        if (this.mixMimeType) link.type = this.mixMimeType;
         
         document.body.appendChild(link);
         link.click();
@@ -1175,6 +1650,9 @@ class LayerAudio {
         // Render each track's notes as sine wave oscillators
         for (const track of midiParser.tracks) {
             for (const note of track.notes) {
+                // Skip notes with invalid timing
+                if (note.time < 0 || note.duration <= 0) continue;
+
                 const osc = offlineCtx.createOscillator();
                 // Use different waveforms based on note range for variety
                 if (note.midi < 48) {
@@ -1190,9 +1668,16 @@ class LayerAudio {
 
                 const gainNode = offlineCtx.createGain();
                 const noteVelocity = note.velocity * (note.midi >= 72 ? 0.3 : 0.5); // Reduce high note volume
+
+                // Ensure envelope times don't overlap for short notes
+                const attackTime = Math.min(0.01, note.duration * 0.1);
+                const releaseTime = Math.min(0.02, note.duration * 0.2);
+                const sustainStart = note.time + attackTime;
+                const sustainEnd = Math.max(sustainStart, note.time + note.duration - releaseTime);
+
                 gainNode.gain.setValueAtTime(0, note.time);
-                gainNode.gain.linearRampToValueAtTime(noteVelocity, note.time + 0.01); // Quick attack
-                gainNode.gain.setValueAtTime(noteVelocity, note.time + note.duration - 0.02);
+                gainNode.gain.linearRampToValueAtTime(noteVelocity, sustainStart); // Quick attack
+                gainNode.gain.setValueAtTime(noteVelocity, sustainEnd);
                 gainNode.gain.linearRampToValueAtTime(0, note.time + note.duration); // Release
 
                 osc.connect(gainNode).connect(offlineCtx.destination);
@@ -1242,5 +1727,5 @@ class LayerAudio {
 
 // Initialize the application when DOM is ready
 document.addEventListener('DOMContentLoaded', () => {
-    window.layerAudio = new LayerAudio();
+    window.layai = new LayAI();
 });

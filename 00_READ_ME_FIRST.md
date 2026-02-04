@@ -1,4 +1,4 @@
-# 🎵 LayerAudio - Complete Conversion Package
+# 🎵 LayAI - Complete Conversion Package
 
 ## ✅ CONVERSION COMPLETE!
 
@@ -80,11 +80,11 @@ Download these 4 files:
 - app.js
 - server.py
 
-Place them in a folder: `layeraudio/`
+Place them in a folder: `layai/`
 
 ### Step 2: Start Server
 ```bash
-cd layeraudio/
+cd layai/
 python3 server.py
 ```
 
@@ -312,6 +312,6 @@ http://localhost:3000
 
 ---
 
-**Thank you for using LayerAudio! 🎵**
+**Thank you for using LayAI! 🎵**
 
 Version 1.0 | January 26, 2024 | Status: ✅ Complete

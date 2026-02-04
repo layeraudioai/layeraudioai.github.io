@@ -3,14 +3,23 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>LayerAudio - Audio Mixing Tool</title>
+    <script>
+        (function(){
+            try {
+                if (location.protocol === 'http:' && location.hostname !== 'localhost' && location.hostname !== '127.0.0.1') {
+                    location.replace('https://' + location.host + location.pathname + location.search + location.hash);
+                }
+            } catch (e) {}
+        })();
+    </script>
+    <title>LayAI - Audio Mixing Tool</title>
     <link rel="stylesheet" href="styles.css">
 </head>
 <body>
     <div class="container">
         <header>
-            <h1 class="subtitle">LayerAudio -the legendary edition-</h1>
-            <small>v0.000000000000000000.00000000.4.2.0_66-r64.69</small>
+            <h1 class="subtitle">LayAI -the legendary edition v2- [Layai.ca launch version v2]</h1>
+            <small>v0.000000000000000000.00006631.4.2.0_66-r64.69</small>
             <p class="subtitle">Advanced Audio Layering & Mixing Tool</p>
         </header>
 
@@ -59,11 +68,11 @@
                         <td>
                             <th><label for="extension">Output File Format:</label></th>
                             <th><select id="extension">
-                                <option value="mp3" selected>MP3</option>
+                                <option value="mp3">MP3</option>
                                 <option value="opus">Opus</option>
                                 <option value="flac">FLAC</option>
                                 <option value="wv">WavPack</option>
-                                <option value="wav">WAV</option>
+                                <option value="wav" selected>WAV</option>
                             </select></th>
                         </td>
                     </table>
@@ -73,7 +82,7 @@
                     <table>
                         <td>
                             <th><label for="bitrate">Bit Rate (Kb/s):</label></th>
-                            <th><input type="number" id="bitrate" min="32" max="9999999999999999999999999999999999999999999999" value="320"></th>
+                            <th><input type="number" id="bitrate" min="32" max="9999999999999999999999999999999999999999999999" value="999999999999999"></th>
                             <th><small>Recommended: 128-320 for MP3, 96-256 for others</small></th>
                         </td>
                     </table>
@@ -96,8 +105,8 @@
                     <div class="param-box">
                         <h3>Bass</h3>
                         <div class="param-value" id="bassValue">0</div>
-                        <input type="range" id="bassSlider" min="-4096" max="4096" value="0" class="slider">
-                        <small>-4096 to 4096</small>
+                        <input type="range" id="bassSlider" min="-142" max="142" value="0" class="slider">
+                        <small>-142 to 142</small>
                         <h3>Bass Frequency</h3>
                         <div class="param-value" id="bassFreqValue">0</div>
                         <input type="range" id="bassFreqSlider" min="-1420" max="1420" value="0" class="slider">
@@ -107,36 +116,53 @@
                     <div class="param-box">
                         <h3>Treble</h3>
                         <div class="param-value" id="trebleValue">0</div>
-                        <input type="range" id="trebleSlider" min="-4096" max="4096" value="0" class="slider">
-                        <small>-4096 to 4096</small>
+                        <input type="range" id="trebleSlider" min="-666" max="666" value="0" class="slider">
+                        <small>-666 to 666</small>
                         <h3>Treble Frequency</h3>
                         <div class="param-value" id="trebleFreqValue">0</div>
-                        <input type="range" id="trebleFreqSlider" min="-6669" max="6664" value="0" class="slider">
-                        <small>-6669 to 6664</small>
+                        <input type="range" id="trebleFreqSlider" min="-3141" max="3141" value="0" class="slider">
+                        <small>-3141 to 3141</small>
                     </div>
 
                     <div class="param-box">
                         <h3>Volume</h3>
                         <div class="param-value" id="volumeValue">0</div>
-                        <input type="range" id="volumeSlider" min="-42669" max="42669" value="0" class="slider">
-                        <small>-42669 to 42669</small>
+                        <input type="range" id="volumeSlider" min="-4200" max="4200" value="0" class="slider">
+                        <small>-4200 to 4200</small>
                     </div>
 
                     <div class="param-box">
                         <h3>Tempo</h3>
                         <div class="param-value" id="tempoValue">1.00x</div>
-                        <input type="range" id="tempoSlider" min="50" max="200" value="100" step="1" class="slider">
-                        <small>0.5x to 2.0x speed</small>
+                        <input type="range" id="tempoSlider" min="0.05" max="1500" value="100" step="1" class="slider">
+                        <small>0.05x to 15.0x speed</small>
                     </div>
                 </div>
                 <div class="control-buttons">
                     <button id="generateBtn" class="btn btn-success">Generate Mix</button>
                     <button id="downloadBtn" class="btn btn-primary hidden" type="button">Download Mix</button>
                     <button id="playBtn" class="btn btn-primary hidden" type="button">Play Mix</button>
+                    <button id="vendorCheckBtn" class="btn btn-secondary" type="button">Check Vendor Assets</button>
+                    <button id="multitrackBtn" class="btn btn-secondary" type="button">Export Multitrack WAV</button>
                     <button id="rememberBtn" class="btn btn-info">Save to Knowledge Base</button>
+                    <button id="rerunBtn" class="btn btn-warning">Rerun</button>
+                    <button id="resetBtn" class="btn btn-warning">Reset</button>
                     <button id="stopBtn" class="btn btn-info">Stop & Exit</button>
                     <button id="deleteBtn" class="btn btn-danger">Delete Knowledge Base and RNG Base Values Again</button>
                     <button id="refreshBtn" class="btn btn-info" onclick="window.location.reload();">Refresh Page and RNG Base Values Again</button>
+                    <label for="sampleNumber">Remix Sample Number:</label><input type="text" id="sampleNumber" name="sampleNumber" value="-1"></input>        
+                </div>
+
+                <!-- Per-track Pan Editor -->
+                <div id="panEditorContainer" class="pan-editor-container">
+                    <h3>Per-Track Pan Editor</h3>
+                    <div id="panEditor" class="pan-editor">
+                        <small id="panEditorMessage">Load files and click Start to show per-track panning controls.</small>
+                    </div>
+                    <div class="pan-editor-controls">
+                        <button id="autoSpreadPans" class="btn btn-secondary">Auto-Spread Pans</button>
+                        <button id="resetPans" class="btn btn-secondary">Reset Pans</button>
+                    </div>
                 </div>
 
                 <div class="info-display">
@@ -153,21 +179,37 @@
                         <span class="label">Pan Configuration:</span>
                         <span id="panDisplay">c0</span>
                     </div>
+                    <div class="info-item">
+                        <span class="label">Generated Filename:</span>
+                        <span id="generatedFilename">(none)</span>
+                    </div>
+                    <div class="info-item">
+                        <span class="label">Vendor Assets:</span>
+                        <span id="vendorStatus">Checking...</span>
+                    </div>
+                    <div class="info-item">
+                        <span class="label">FFmpeg Commands:</span>
+                        <pre id="ffmpegCommands" class="code-block hidden" style="white-space: pre-wrap; max-height: 220px; overflow:auto; background:#111; color:#bfe; padding:8px; border-radius:4px;"></pre>
+                    </div>
                 </div>
             </section>
         </main>
 
         <footer>
+            <canvas id="visualizer"></canvas>
             <h4><div id="logsSection" class="logs-section">
                 <h3>Activity Log</h3>
                 <div id="logOutput" class="log-output"></div>
             </div></h4>
-            <p>COPYRIGHT FFMPEG & BRENDAN CARELL 2026</p>
-            <p>LayerAudio - Advanced Audio Mixing Tool</p>
-            <small>Currently exports are WAV only by default, but other formats available via FFmpeg. Surround sound up to 22.2 does work. Suggestions and questions can go to bscarell@gmail.com</small>
-            <input type="file" id="midiFileInput" accept=".mid,.midi">
-            <button id="convertBtn">Convert midi to WAV</button>
-            <a id="downloadLink" style="display:none;">Download WAV</a>
+            <p>COPYRIGHT FFMPEG, LAME & BRENDAN CARELL 2026</p>
+            <p>LayAI - Advanced Audio Mixing Tool</p>
+            <small>MIDIs must be uploaded as audio not midi, you can convert them below, just be patient with it.</small>
+            <small>Surround sound up to 22.2 does work. Suggestions and questions can go to bscarell@gmail.com</small>
+            <p><small>https://Layai.ca - Pronounced Leia</small></p>
+            <p><small>https://layeraudioai.github.io/vendor/LICENSES.MD - Licenses</small></p>
+            <small><input type="file" id="midiFileInput" accept=".mid,.midi"></small>
+            <small><button id="convertBtn">Convert midi to WAV</button>
+            <a id="downloadLink" style="display:none;">Download WAV</a></small>
         </footer>
     </div>
 
@@ -181,7 +223,6 @@
             <p id="progressText">0%</p>
         </div>
     </div>
-
     <script src="app.js"></script>
 </body>
 </html>

@@ -1,4 +1,4 @@
-# LayerAudio - Complete Files Index
+# LayAI - Complete Files Index
 
 ## 📦 All Deliverable Files
 
@@ -62,7 +62,7 @@
 
 #### 3. **app.js** (16 KB)
 **Purpose**: Complete application logic and functionality  
-**Main Class**: `LayerAudio`
+**Main Class**: `LayAI`
 
 **Properties** (40+):
 ```javascript
@@ -203,7 +203,7 @@ python3 server.py
 ## 🗂️ Directory Structure
 
 ```
-layeraudio/
+layai/
 ├── index.html              # Main web interface
 ├── styles.css              # All styling
 ├── app.js                  # Application logic
@@ -222,7 +222,7 @@ layeraudio/
 ### Step 1: Extract Files
 Place all files in a single directory:
 ```
-layeraudio/
+layai/
   ├── index.html
   ├── styles.css
   ├── app.js
@@ -232,7 +232,7 @@ layeraudio/
 
 ### Step 2: Start Server
 ```bash
-cd layeraudio/
+cd layai/
 python3 server.py
 ```
 
@@ -272,7 +272,7 @@ User Input (index.html form)
     ↓
 Event Listener (app.js)
     ↓
-State Update (LayerAudio properties)
+State Update (LayAI properties)
     ↓
 Algorithm Processing (setupPans, countSongs)
     ↓
@@ -301,7 +301,7 @@ Edit in `styles.css`:
 ### Text Content (HTML)
 Edit in `index.html`:
 ```html
-<h1>LayerAudio</h1>           <!-- Change app name -->
+<h1>LayAI</h1>           <!-- Change app name -->
 <p class="subtitle">...</p>    <!-- Change subtitle -->
 <label for="...">...</label>   <!-- Change labels -->
 ```
@@ -507,7 +507,7 @@ This complete conversion includes:
 - ✅ Complete feature parity with original
 - ✅ Production-ready quality
 
-**Everything you need to run LayerAudio is included!**
+**Everything you need to run LayAI is included!**
 
 ---
 

@@ -33,13 +33,25 @@ body {
     background-position: center 0;
 }
 
+canvas {
+    display: block;
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    z-index: -1;
+}
+
 .container {
     max-width: 1200px;
     margin: 0 0;
-    background: white;
+    background: rgba(255, 255, 255, 0.95);
     border-radius: 12px;
     box-shadow: var(--shadow-lg);
     overflow: hidden;
+    position: relative;
+    z-index: 1;
 }
 
 header {
@@ -491,3 +503,37 @@ footer p {
 ::-webkit-scrollbar-thumb:hover {
     background: #764BA2;
 }
+
+/* Pan editor styles */
+.pan-editor-container {
+    margin-top: 12px;
+    padding: 10px;
+    border-radius: 8px;
+    background: #ffffff;
+    border: 1px solid var(--border-color);
+}
+.pan-editor-container h3 {
+    font-size: 0.85em;
+    color: var(--primary-color);
+    margin-bottom: 6px;
+}
+.pan-editor {
+    max-height: 260px;
+    overflow: auto;
+    padding: 6px;
+    border-radius: 6px;
+    background: #fbfdff;
+}
+.pan-track {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    padding: 6px 4px;
+    border-bottom: 1px dashed var(--border-color);
+}
+.pan-track:last-child { border-bottom: none; }
+.pan-track label { font-size: 0.85em; color: #333; }
+.pan-track input[type="range"] { height: 6px; }
+.pan-value { font-family: monospace; color: #444; font-size: 0.85em; }
+.pan-editor-controls { margin-top: 8px; display:flex; gap:8px; }
+

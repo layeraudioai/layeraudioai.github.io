@@ -1,5 +1,5 @@
 ================================================================================
-                    LAYERAUDIO - COMPLETE PACKAGE
+                    LAYAI - COMPLETE PACKAGE
                    All Files & Download Links
 ================================================================================
 
@@ -80,7 +80,7 @@ QUICK START
    - app.js
    - server.py
 
-2. Place in folder: layeraudio/
+2. Place in folder: layai/
 
 3. Run: python3 server.py
 

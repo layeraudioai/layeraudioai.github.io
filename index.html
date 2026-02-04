@@ -4,12 +4,19 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <script>
+        // Force HTTPS redirect for production domains
         (function(){
             try {
-                if (location.protocol === 'http:' && location.hostname !== 'localhost' && location.hostname !== '127.0.0.1') {
+                const hostname = location.hostname.toLowerCase();
+                const isProduction = hostname.includes('layai.ca') || hostname.includes('layeraudio') || hostname.includes('github.io');
+                const isLocalDev = hostname === 'localhost' || hostname === '127.0.0.1';
+                
+                if (isProduction && !isLocalDev) {
                     location.replace('https://' + location.host + location.pathname + location.search + location.hash);
                 }
-            } catch (e) {}
+            } catch (e) {
+                console.warn('HTTPS redirect check failed:', e);
+            }
         })();
     </script>
     <title>LayAI - Audio Mixing Tool</title>

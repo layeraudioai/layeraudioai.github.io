@@ -764,22 +764,39 @@ class LayAI {
                 const numChannels = Math.min(2, buffer.numberOfChannels || 1);
                 const sampleRate = buffer.sampleRate || 44100;
 
-                // Prepare samples (interleave if stereo)
-                let samples;
-                if (numChannels === 1) samples = buffer.getChannelData(0);
-                else samples = this.interleave(buffer.getChannelData(0), buffer.getChannelData(1));
+                // Get channel data and convert to 16-bit PCM
+                let leftPcm16, rightPcm16;
+                if (numChannels === 1) {
+                    leftPcm16 = this.floatTo16BitPCM(buffer.getChannelData(0));
+                    rightPcm16 = null;
+                } else {
+                    leftPcm16 = this.floatTo16BitPCM(buffer.getChannelData(0));
+                    rightPcm16 = this.floatTo16BitPCM(buffer.getChannelData(1));
+                }
 
-                const pcm16 = this.floatTo16BitPCM(samples);
                 const bitrate = Math.max(32, Math.min(320, Math.round(this.getExportBitrate() || 128)));
                 const mp3enc = new Mp3Encoder(numChannels, sampleRate, bitrate);
 
                 const mp3Data = [];
                 const maxSamples = 1152;
-                for (let i = 0; i < pcm16.length; i += maxSamples) {
-                    const chunk = pcm16.subarray(i, i + maxSamples);
-                    const mp3buf = mp3enc.encodeBuffer(chunk);
-                    if (mp3buf && mp3buf.length) mp3Data.push(new Uint8Array(mp3buf));
+                
+                // For stereo: encode left and right channels separately
+                if (numChannels === 2) {
+                    for (let i = 0; i < leftPcm16.length; i += maxSamples) {
+                        const leftChunk = leftPcm16.subarray(i, i + maxSamples);
+                        const rightChunk = rightPcm16.subarray(i, i + maxSamples);
+                        const mp3buf = mp3enc.encodeBuffer(leftChunk, rightChunk);
+                        if (mp3buf && mp3buf.length) mp3Data.push(new Uint8Array(mp3buf));
+                    }
+                } else {
+                    // For mono: pass only left channel
+                    for (let i = 0; i < leftPcm16.length; i += maxSamples) {
+                        const chunk = leftPcm16.subarray(i, i + maxSamples);
+                        const mp3buf = mp3enc.encodeBuffer(chunk);
+                        if (mp3buf && mp3buf.length) mp3Data.push(new Uint8Array(mp3buf));
+                    }
                 }
+                
                 const end = mp3enc.flush();
                 if (end && end.length) mp3Data.push(new Uint8Array(end));
 

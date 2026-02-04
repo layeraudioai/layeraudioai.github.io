@@ -1010,39 +1010,105 @@ class LayAI {
     }
 
     applyPanMapping(channelPool, mapping, outputChannels, maxLength, sampleRate) {
-        // If per-track pan values are present, apply them as an equal-power pan
-        if (this.trackPans && this.trackPans.length === channelPool.length) {
-            const outCh = Math.max(1, outputChannels);
-            const output = this.audioContext.createBuffer(outCh, maxLength, sampleRate);
+        const output = this.audioContext.createBuffer(outputChannels, maxLength, sampleRate);
 
+        // If per-track pan values are present, apply them to each input channel
+        if (this.trackPans && this.trackPans.length === channelPool.length) {
+            // Create panned versions of all input channels
+            const pannedChannels = [];
+            
             for (let inIdx = 0; inIdx < channelPool.length; inIdx++) {
                 const pan = typeof this.trackPans[inIdx] === 'number' ? this.trackPans[inIdx] : 0; // -1 .. 1
-                const angle = (pan + 1) * Math.PI / 4; // -1..1 -> 0..pi/2
-                const leftGain = Math.cos(angle);
-                const rightGain = Math.sin(angle);
                 const inputData = channelPool[inIdx];
-                if (!inputData) continue;
+                if (!inputData) {
+                    pannedChannels.push(inputData);
+                    continue;
+                }
 
-                if (outCh === 1) {
-                    const out0 = output.getChannelData(0);
-                    const monoGain = (leftGain + rightGain) * 0.5;
-                    for (let i = 0; i < maxLength; i++) out0[i] += inputData[i] * monoGain;
-                } else {
-                    const left = output.getChannelData(0);
-                    const right = output.getChannelData(1);
+                // Apply equal-power panning across output channels
+                if (outputChannels === 1) {
+                    // Mono: average the panned gains
+                    const angle = (pan + 1) * Math.PI / 4;
+                    const monoGain = (Math.cos(angle) + Math.sin(angle)) * 0.5;
+                    const pannedData = new Float32Array(maxLength);
                     for (let i = 0; i < maxLength; i++) {
-                        left[i] += inputData[i] * leftGain;
-                        right[i] += inputData[i] * rightGain;
+                        pannedData[i] = inputData[i] * monoGain;
+                    }
+                    pannedChannels.push(pannedData);
+                } else if (outputChannels === 2) {
+                    // Stereo: standard left/right panning
+                    const angle = (pan + 1) * Math.PI / 4;
+                    const leftGain = Math.cos(angle);
+                    const rightGain = Math.sin(angle);
+                    
+                    // Store gains for later application via mapping
+                    pannedChannels.push({
+                        data: inputData,
+                        gains: [leftGain, rightGain]
+                    });
+                } else {
+                    // Surround sound: distribute pan across all channels
+                    // Pan is primarily front L/R, with side/surround channels getting the signal equally
+                    const angle = (pan + 1) * Math.PI / 4;
+                    const frontLeft = Math.cos(angle);
+                    const frontRight = Math.sin(angle);
+                    
+                    const gains = new Array(outputChannels).fill(0);
+                    gains[0] = frontLeft;  // Front Left
+                    if (outputChannels > 1) gains[1] = frontRight;  // Front Right
+                    
+                    // Distribute to surround channels at lower volume
+                    const surroundGain = (frontLeft + frontRight) * 0.5 * 0.7; // slightly lower
+                    for (let ch = 2; ch < outputChannels; ch++) {
+                        if (ch === outputChannels - 1 && outputChannels > 2) {
+                            // LFE channel gets low mix
+                            gains[ch] = surroundGain * 0.5;
+                        } else {
+                            // Side/Rear channels
+                            gains[ch] = surroundGain;
+                        }
+                    }
+                    
+                    pannedChannels.push({
+                        data: inputData,
+                        gains: gains
+                    });
+                }
+            }
+            
+            // Apply mapping with panned gains
+            for (let outChannel = 0; outChannel < outputChannels; outChannel++) {
+                const outputData = output.getChannelData(outChannel);
+                const entries = mapping[outChannel] || [];
+                
+                for (const entry of entries) {
+                    const inIdx = entry.index;
+                    const basegain = entry.gain || 1;
+                    
+                    if (inIdx < 0 || inIdx >= pannedChannels.length) continue;
+                    const pannedInput = pannedChannels[inIdx];
+                    if (!pannedInput) continue;
+                    
+                    if (pannedInput.gains) {
+                        // Panned channel with per-output gains
+                        const panGain = pannedInput.gains[outChannel] || 0;
+                        const inputData = pannedInput.data;
+                        for (let i = 0; i < maxLength; i++) {
+                            outputData[i] += inputData[i] * basegain * panGain;
+                        }
+                    } else {
+                        // Already panned mono data
+                        for (let i = 0; i < maxLength; i++) {
+                            outputData[i] += pannedInput[i] * basegain;
+                        }
                     }
                 }
             }
-
-            // For outputs beyond 2 channels, leave them silent (mapping could be extended later)
+            
             return output;
         }
 
         // Default mapping behavior (no per-track pans)
-        const output = this.audioContext.createBuffer(outputChannels, maxLength, sampleRate);
         for (let outChannel = 0; outChannel < outputChannels; outChannel++) {
             const outputData = output.getChannelData(outChannel);
             const entries = mapping[outChannel] || [];

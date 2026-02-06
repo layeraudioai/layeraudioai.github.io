@@ -8,25 +8,36 @@ os.chdir(os.path.dirname(os.path.abspath(__file__)))
 
 class RedirectHandler(http.server.SimpleHTTPRequestHandler):
     def do_GET(self):
-        # Redirect to HTTPS for layai.ca domain
         host = self.headers.get('Host', '')
-        if 'layai.ca' in host:
+        # Force HTTPS redirect for any domain (not just localhost development)
+        if self.headers.get('X-Forwarded-Proto') == 'http' or (host and 'localhost' not in host and '127.0.0.1' not in host):
             self.send_response(301)
-            self.send_header('Location', f'https://{host}{self.path}')
+            protocol = 'https' if self.headers.get('X-Forwarded-Proto') else 'https'
+            self.send_header('Location', f'{protocol}://{host}{self.path}')
             self.end_headers()
             return
-        # Otherwise serve normally
+        # Add HSTS header for secure redirect
+        self.send_response(200)
+        self.send_header('Strict-Transport-Security', 'max-age=31536000; includeSubDomains; preload')
+        self.send_header('X-Content-Type-Options', 'nosniff')
+        self.send_header('X-Frame-Options', 'DENY')
+        self.end_headers()
+        # Serve the file
         super().do_GET()
     
     def do_HEAD(self):
-        # Redirect to HTTPS for layai.ca domain
         host = self.headers.get('Host', '')
-        if 'layai.ca' in host:
+        # Force HTTPS redirect for any domain (not just localhost development)
+        if self.headers.get('X-Forwarded-Proto') == 'http' or (host and 'localhost' not in host and '127.0.0.1' not in host):
             self.send_response(301)
-            self.send_header('Location', f'https://{host}{self.path}')
+            protocol = 'https' if self.headers.get('X-Forwarded-Proto') else 'https'
+            self.send_header('Location', f'{protocol}://{host}{self.path}')
             self.end_headers()
             return
-        super().do_HEAD()
+        # Add HSTS header
+        self.send_response(200)
+        self.send_header('Strict-Transport-Security', 'max-age=31536000; includeSubDomains; preload')
+        self.end_headers()
 
 Handler = RedirectHandler
 

@@ -1,0 +1,42 @@
+# Force HTTPS redirect
+<IfModule mod_rewrite.c>
+    RewriteEngine On
+    
+    # Force HTTPS for all non-localhost requests
+    RewriteCond %{HTTPS} off
+    RewriteCond %{HTTP_HOST} !^localhost$ [NC]
+    RewriteCond %{HTTP_HOST} !^127\.0\.0\.1$ [NC]
+    RewriteRule ^(.*)$ https://%{HTTP_HOST}%{REQUEST_URI} [L,R=301]
+    
+    # HSTS header (Strict-Transport-Security)
+    Header always set Strict-Transport-Security "max-age=31536000; includeSubDomains; preload"
+    
+    # Security headers
+    Header always set X-Frame-Options "DENY"
+    Header always set X-Content-Type-Options "nosniff"
+    Header always set X-XSS-Protection "1; mode=block"
+    Header always set Referrer-Policy "strict-origin-when-cross-origin"
+    Header always set Content-Security-Policy "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'"
+    
+    # Serve files as-is
+    RewriteCond %{REQUEST_FILENAME} -f
+    RewriteCond %{REQUEST_FILENAME} -d
+    RewriteRule ^ - [L]
+    
+    # Route all other requests to index.html
+    RewriteRule ^ index.html [QSA,L]
+</IfModule>
+
+# Enable compression
+<IfModule mod_deflate.c>
+    AddOutputFilterByType DEFLATE text/html text/plain text/xml text/css text/javascript application/javascript
+</IfModule>
+
+# Cache control
+#<FilesMatch "\.(js|css)$">
+#    Header set Cache-Control "max-age=31536000, public, immutable"
+#</FilesMatch>
+
+# <FilesMatch "\.(html|htm)$">
+#     Header set Cache-Control "max-age=3600, must-revalidate"
+# </FilesMatch>

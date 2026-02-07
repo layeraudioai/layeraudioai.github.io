@@ -35,8 +35,8 @@ export class Visualizer
         this.TOTAL_STARS = TOTAL_STARS;
         this.fftSize = fftSize;
         this.TOTAL_AVG_POINTS = TOTAL_AVG_POINTS;
-        // Optionally, run the old benchmark but set values lower than result
-        // this._benchmarkAndSetVsync();
+        // Run a quick benchmark on boot to tune base visuals
+        this._benchmarkAndSetVsync();
         this.audio = source;
         this.media = this.audio ? this.audio.src : null;
         // [32, 64, 128, 256, 512, 1024, 2048]
@@ -49,7 +49,6 @@ export class Visualizer
         this.stars_color = "#465677";
         this.stars_color_2 = "#B5BFD4";
         this.stars_color_special = "#F451BA";
-        this.TOTAL_STARS = 150;
         this.STARS_BREAK_POINT = 140;
         this.stars = [];
         this.waveform_color = "rgba(29, 36, 57, 0.05)";
@@ -66,7 +65,6 @@ export class Visualizer
         this.bubble_avg_line_color = "rgba(77, 218, 248, 1)";
         this.bubble_avg_line_color_2 = "rgba(77, 218, 248, 1)";
         this.bubble_avg_tick = 0.001;
-        this.TOTAL_AVG_POINTS = 64;
         this.AVG_BREAK_POINT = 100;
         this.avg_points = [];
 
@@ -75,13 +73,26 @@ export class Visualizer
         this.SHOW_WAVEFORM = false;
         this.SHOW_AVERAGE = false;
         this.SHOW_BAR_GRAPH = false;
+        this.SHOW_RINGS = false;
+        this.SHOW_SPIRAL = false;
+        this.SHOW_RADIAL_BARS = false;
+        this.SHOW_RADIAL_BARS = false;
+        this.SHOW_PIANO_ROLL = false;
+
+        this.midiNotes = null;
+        this.midiDuration = 0;
+        this.midiSourceName = '';
 
         // For rotating effects
         this.visualizerModes = [
             'SHOW_STAR_FIELD',
             'SHOW_WAVEFORM',
             'SHOW_AVERAGE',
-            'SHOW_BAR_GRAPH'
+            'SHOW_BAR_GRAPH',
+            'SHOW_RINGS',
+            'SHOW_SPIRAL',
+            'SHOW_RADIAL_BARS',
+            'SHOW_PIANO_ROLL'
         ];
         // Track indices for active visualizers
         this.currentVisualizerIndices = [
@@ -126,6 +137,8 @@ export class Visualizer
         this._drawLoopStarted = false;
         this._lastFrameTime = 0;
         this._lastGlitchTime = 0;
+        this.lockedCanvasSize = false;
+        this._previousRenderTarget = null;
         this.resizeCanvas();
         this.createPoints();
         this.createStarField();
@@ -153,6 +166,10 @@ export class Visualizer
         this.SHOW_WAVEFORM = false;
         this.SHOW_AVERAGE = false;
         this.SHOW_BAR_GRAPH = false;
+        this.SHOW_RINGS = false;
+        this.SHOW_SPIRAL = false;
+        this.SHOW_RADIAL_BARS = false;
+        this.SHOW_PIANO_ROLL = false;
         // Enable only the selected one
         const mode = this.visualizerModes[index];
         this[mode] = true;
@@ -164,14 +181,18 @@ export class Visualizer
         this.SHOW_WAVEFORM = false;
         this.SHOW_AVERAGE = false;
         this.SHOW_BAR_GRAPH = false;
+        this.SHOW_RINGS = false;
+        this.SHOW_SPIRAL = false;
+        this.SHOW_RADIAL_BARS = false;
+        this.SHOW_PIANO_ROLL = false;
         // Enable all selected indices (allow any combination)
         for (const idx of indices) {
             const mode = this.visualizerModes[idx];
             this[mode] = true;
         }
         // Log the user's visualizer performance settings using addLog
-        if (typeof this.addLog === 'function') {
-            this.addLog('[Visualizer Settings] ' + JSON.stringify({
+        //if (typeof this.addLog === 'function') {
+            /*this.addLog('[Visualizer Settings] ' + JSON.stringify({
                 vsyncHz: this.vsyncHz,
                 TOTAL_STARS: this.TOTAL_STARS,
                 fftSize: this.fftSize,
@@ -181,10 +202,22 @@ export class Visualizer
                 SHOW_WAVEFORM: this.SHOW_WAVEFORM,
                 SHOW_AVERAGE: this.SHOW_AVERAGE,
                 SHOW_BAR_GRAPH: this.SHOW_BAR_GRAPH
-            }), 'info');
-        }
+            }), 'info');*/
+        //}
         // Do not show any visualizer if none are checked
         // ...existing code...
+    }
+
+    setMidiNotes(data) {
+        if (!data || !data.notes || !data.notes.length) {
+            this.midiNotes = null;
+            this.midiDuration = 0;
+            this.midiSourceName = '';
+            return;
+        }
+        this.midiNotes = data.notes;
+        this.midiDuration = data.duration || 0;
+        this.midiSourceName = data.sourceName || '';
     }
 
     startVisualizerRotation() {
@@ -202,6 +235,10 @@ export class Visualizer
                     if (checkboxes.waveform && checkboxes.waveform.checked) enabledModes.push('SHOW_WAVEFORM');
                     if (checkboxes.average && checkboxes.average.checked) enabledModes.push('SHOW_AVERAGE');
                     if (checkboxes.bar && checkboxes.bar.checked) enabledModes.push('SHOW_BAR_GRAPH');
+                    if (checkboxes.rings && checkboxes.rings.checked) enabledModes.push('SHOW_RINGS');
+                    if (checkboxes.spiral && checkboxes.spiral.checked) enabledModes.push('SHOW_SPIRAL');
+                    if (checkboxes.radial && checkboxes.radial.checked) enabledModes.push('SHOW_RADIAL_BARS');
+                    if (checkboxes.piano && checkboxes.piano.checked) enabledModes.push('SHOW_PIANO_ROLL');
                 }
                 let modes = enabledModes.length ? enabledModes : [];
                 let indices = modes.map(mode => this.visualizerModes.indexOf(mode)).filter(i => i !== -1);
@@ -211,9 +248,11 @@ export class Visualizer
                 } else {
                     const randomCheckbox = window.layaiVisualizerCheckboxes && window.layaiVisualizerCheckboxes.random;
                     if (randomCheckbox && randomCheckbox.checked) {
-                        // Pick exactly one of the checked visualizers at random
-                        const idx = indices[Math.floor(Math.random() * indices.length)];
-                        this.currentVisualizerIndices = [idx];
+                        // Pick 1-4 of the checked visualizers at random
+                        const maxPick = Math.min(4, indices.length);
+                        const pickCount = Math.max(1, Math.floor(Math.random() * maxPick) + 1);
+                        const shuffled = indices.slice().sort(() => Math.random() - 0.5);
+                        this.currentVisualizerIndices = shuffled.slice(0, pickCount);
                         this.setVisualizerModes(this.currentVisualizerIndices);
                     } else {
                         this.currentVisualizerIndices = indices;
@@ -230,8 +269,8 @@ export class Visualizer
     // Resize canvas to fill window
     resizeCanvas() {
         if (!this.canvas) return;
-        const nextW = window.innerWidth;
-        const nextH = window.innerHeight;
+        const nextW = this.lockedCanvasSize ? this.canvas.width : window.innerWidth;
+        const nextH = this.lockedCanvasSize ? this.canvas.height : window.innerHeight;
         if (this.canvas.width !== nextW || this.canvas.height !== nextH) {
             this.canvas.width = nextW;
             this.canvas.height = nextH;
@@ -282,6 +321,35 @@ export class Visualizer
         this.draw();
     }
 
+    setRenderTarget(canvas, options = {}) {
+        if (!canvas) return;
+        const { lockSize = false } = options;
+        this._previousRenderTarget = {
+            canvas: this.canvas,
+            ctx: this.ctx,
+            locked: this.lockedCanvasSize
+        };
+        this.canvas = canvas;
+        this.ctx = this.canvas.getContext('2d');
+        this.lockedCanvasSize = !!lockSize;
+        this.resizeCanvas();
+        this.createPoints();
+        this.stars = [];
+        this.createStarField();
+    }
+
+    restoreRenderTarget() {
+        if (!this._previousRenderTarget) return;
+        this.canvas = this._previousRenderTarget.canvas;
+        this.ctx = this._previousRenderTarget.ctx;
+        this.lockedCanvasSize = this._previousRenderTarget.locked;
+        this._previousRenderTarget = null;
+        this.resizeCanvas();
+        this.createPoints();
+        this.stars = [];
+        this.createStarField();
+    }
+
     _benchmarkAndSetVsync() {
         // Run a quick benchmark to estimate frame rate
         const rates = [15, 20, 30, 35, 40, 60, 90, 120, 240, 480, 1000];
@@ -299,17 +367,69 @@ export class Visualizer
                 for (let r of rates) {
                     if (fps >= r) best = r;
                 }
-                this.vsyncHz = best;
-                // Adjust particle count based on vsync
-                if (best <= 20) this.TOTAL_STARS = 500;
-                else if (best <= 30) this.TOTAL_STARS = 900;
-                else if (best <= 60) this.TOTAL_STARS = 1500;
-                else if (best <= 120) this.TOTAL_STARS = 2200;
-                else if (best <= 240) this.TOTAL_STARS = 3000;
-                else this.TOTAL_STARS = 4000;
+                this._applyPerformanceSettings(best);
             }
         };
         test();
+    }
+
+    _applyPerformanceSettings(best) {
+        const vsyncTarget =
+            best >= 120 ? Math.min(120, Math.round(best * 0.9)) :
+            best >= 90 ? 90 :
+            best >= 60 ? 60 :
+            best >= 40 ? 45 :
+            best >= 30 ? 30 :
+            20;
+        this.vsyncHz = vsyncTarget;
+        // Adjust core visual cost based on measured refresh (conservative)
+        if (best <= 20) {
+            this.TOTAL_STARS = 350;
+            this.fftSize = 256;
+            this.TOTAL_AVG_POINTS = 16;
+        } else if (best <= 30) {
+            this.TOTAL_STARS = 500;
+            this.fftSize = 256;
+            this.TOTAL_AVG_POINTS = 20;
+        } else if (best <= 60) {
+            this.TOTAL_STARS = 800;
+            this.fftSize = 512;
+            this.TOTAL_AVG_POINTS = 24;
+        } else if (best <= 120) {
+            this.TOTAL_STARS = 1200;
+            this.fftSize = 512;
+            this.TOTAL_AVG_POINTS = 32;
+        } else if (best <= 240) {
+            this.TOTAL_STARS = 1600;
+            this.fftSize = 1024;
+            this.TOTAL_AVG_POINTS = 48;
+        } else {
+            this.TOTAL_STARS = 2000;
+            this.fftSize = 1024;
+            this.TOTAL_AVG_POINTS = 48;
+        }
+
+        this._rebuildAfterPerfChange();
+    }
+
+    _rebuildAfterPerfChange() {
+        if (this.analyser) {
+            this.analyser.fftSize = this.fftSize;
+            this.bufferLength = this.analyser.frequencyBinCount;
+            this.dataArray = new Uint8Array(this.bufferLength);
+            this.frequencyData = new Uint8Array(this.bufferLength);
+            this.TOTAL_POINTS = this.analyser.frequencyBinCount;
+            this.timeData = new Uint8Array(this.TOTAL_POINTS);
+            this.timeDomainData = new Uint8Array(this.bufferLength);
+        } else {
+            this.TOTAL_POINTS = this.fftSize / 2;
+        }
+
+        if (this.canvas) this.resizeCanvas();
+        this.points = [];
+        this.stars = [];
+        this.createPoints();
+        this.createStarField();
     }
 
     draw() {
@@ -321,6 +441,11 @@ export class Visualizer
             const frameInterval = 1000 / this.vsyncHz;
             if (now - this._lastFrameTime < frameInterval) return;
             this._lastFrameTime = now;
+            const dt = this._lastFrameNow ? (now - this._lastFrameNow) : frameInterval;
+            this._lastFrameNow = now;
+            this._lastFrameDuration = dt;
+            const slowFrame = dt > frameInterval * 1.25;
+            this._slowFrameStreak = slowFrame ? (this._slowFrameStreak || 0) + 1 : 0;
 
             // Always update audio data
             this.analyser.getByteFrequencyData(this.frequencyData);
@@ -364,15 +489,35 @@ export class Visualizer
                     this.x += barWidth + 1;
                 }
             }
-            if (this.SHOW_WAVEFORM) this.drawWaveform();
-            if (this.SHOW_AVERAGE) this.drawAverageCircle();
+              if (this.SHOW_RADIAL_BARS) this.drawRadialBars();
+              if (this.SHOW_WAVEFORM) this.drawWaveform();
+              if (this.SHOW_AVERAGE) this.drawAverageCircle();
+              if (this.SHOW_RINGS) this.drawPulseRings();
+              if (this.SHOW_SPIRAL) this.drawSpectrumSpiral();
+              if (this.SHOW_PIANO_ROLL) this.drawPianoRoll();
 
             // Glitch effect (frequent, still bounded)
-            const checkboxes = window.layaiVisualizerCheckboxes;
             const glitchEnabled = !!(checkboxes && checkboxes.glitch && checkboxes.glitch.checked);
-            if (glitchEnabled && !this.audio.paused && now - this._lastGlitchTime > 60) {
-                this._lastGlitchTime = now;
-                this.createGlitchLine();
+              if (glitchEnabled && !this.audio.paused) {
+                let bpm = 120;
+                const bpmInput = document.getElementById('bpmInput');
+                if (bpmInput) {
+                    const parsed = parseFloat(bpmInput.value);
+                    if (Number.isFinite(parsed) && parsed > 0) bpm = parsed;
+                }
+                const beatMs = 60000 / bpm;
+                const slowFrame = this._slowFrameStreak >= 2;
+                const glitchInterval = beatMs * (slowFrame ? 1.2 : 0.6);
+                if (now - this._lastGlitchTime >= glitchInterval) {
+                    this._lastGlitchTime = now;
+                    if (Math.random() < (slowFrame ? 0.45 : 0.75)) {
+                        const burstMax = slowFrame ? 1 : 2;
+                        const burst = 1 + Math.floor(Math.random() * burstMax);
+                        const intensity = slowFrame ? 0.35 : 0.7;
+                        for (let i = 0; i < burst; i++) this.createGlitchLine(intensity);
+                        if (Math.random() < (slowFrame ? 0.15 : 0.35)) this.createGlitchLine(intensity);
+                    }
+                }
             }
         };
         this._rafId = requestAnimationFrame(loop);
@@ -669,88 +814,223 @@ export class Visualizer
         }
     }
 
-    createGlitchLine() {
+    createGlitchLine(intensity = 1) {
         // Full-frame glitch pass without readbacks (fast, visible)
         if (!this.canvas || !this.ctx) return;
         const width = this.canvas.width;
         const height = this.canvas.height;
-        const regionW = Math.max(120, Math.floor(width * (0.2 + Math.random() * 0.45)));
-        const regionH = Math.max(80, Math.floor(height * (0.2 + Math.random() * 0.45)));
-        const regionX = Math.floor(Math.random() * Math.max(1, width - regionW));
-        const regionY = Math.floor(Math.random() * Math.max(1, height - regionH));
-        const shiftX = Math.floor((Math.random() - 0.5) * 140);
-        const shiftY = Math.floor((Math.random() - 0.5) * 80);
+        const q = Math.max(0.3, Math.min(1, intensity));
 
         this.ctx.save();
 
-        // Base full-frame shift
-        this.ctx.globalCompositeOperation = "source-over";
-        this.ctx.globalAlpha = 0.95;
-        this.ctx.drawImage(
-            this.canvas,
-            regionX,
-            regionY,
-            regionW,
-            regionH,
-            regionX + shiftX,
-            regionY + shiftY,
-            regionW,
-            regionH
-        );
+        // Occasional full-canvas jitter and rotation for extra violence
+        if (Math.random() < 0.45 * q) {
+            const jitterX = Math.floor((Math.random() - 0.5) * 100 * q);
+            const jitterY = Math.floor((Math.random() - 0.5) * 70 * q);
+            this.ctx.globalCompositeOperation = "source-over";
+            this.ctx.globalAlpha = 0.38;
+            this.ctx.drawImage(this.canvas, jitterX, jitterY);
+        }
+        if (Math.random() < 0.22 * q) {
+            const angle = Math.random() * Math.PI * 2;
+            this.ctx.globalCompositeOperation = "source-over";
+            this.ctx.globalAlpha = 0.3;
+            this.ctx.translate(this.cx, this.cy);
+            this.ctx.rotate(angle);
+            this.ctx.translate(-this.cx, -this.cy);
+            this.ctx.drawImage(this.canvas, 0, 0);
+            this.ctx.setTransform(1, 0, 0, 1, 0, 0);
+        }
 
-        // Color channel-style offsets
-        this.ctx.globalCompositeOperation = "screen";
-        this.ctx.globalAlpha = 0.45;
-        this.ctx.drawImage(
-            this.canvas,
-            regionX,
-            regionY,
-            regionW,
-            regionH,
-            regionX + shiftX + 12,
-            regionY + shiftY - 6,
-            regionW,
-            regionH
-        );
-        this.ctx.drawImage(
-            this.canvas,
-            regionX,
-            regionY,
-            regionW,
-            regionH,
-            regionX + shiftX - 12,
-            regionY + shiftY + 6,
-            regionW,
-            regionH
-        );
+        const passes = Math.max(1, Math.floor((2 + Math.random() * 2) * q));
+        for (let pass = 0; pass < passes; pass++) {
+            const regionW = Math.max(180, Math.floor(width * (0.3 + Math.random() * 0.6)));
+            const regionH = Math.max(120, Math.floor(height * (0.3 + Math.random() * 0.6)));
+            const regionX = Math.floor(Math.random() * Math.max(1, width - regionW));
+            const regionY = Math.floor(Math.random() * Math.max(1, height - regionH));
+            const shiftX = Math.floor((Math.random() - 0.5) * 300 * q);
+            const shiftY = Math.floor((Math.random() - 0.5) * 180 * q);
 
-        // Scanline slices
-        this.ctx.globalCompositeOperation = "source-over";
-        this.ctx.globalAlpha = 0.95;
-        const slices = 3 + Math.floor(Math.random() * 5);
-        for (let i = 0; i < slices; i++) {
-            const sliceH = Math.max(6, Math.floor(Math.random() * 60));
-            const y = regionY + Math.floor(Math.random() * Math.max(1, regionH - sliceH));
-            const localShift = Math.floor((Math.random() - 0.5) * 220);
+            // Base region shift
+            this.ctx.globalCompositeOperation = "source-over";
+            this.ctx.globalAlpha = 0.98;
             this.ctx.drawImage(
                 this.canvas,
                 regionX,
-                y,
+                regionY,
                 regionW,
-                sliceH,
-                regionX + localShift,
-                y,
+                regionH,
+                regionX + shiftX,
+                regionY + shiftY,
                 regionW,
-                sliceH
+                regionH
             );
+
+            // Stronger RGB split
+            this.ctx.globalCompositeOperation = "screen";
+            this.ctx.globalAlpha = 0.65;
+            this.ctx.drawImage(
+                this.canvas,
+                regionX,
+                regionY,
+                regionW,
+                regionH,
+                regionX + shiftX + Math.floor(20 * q),
+                regionY + shiftY - Math.floor(12 * q),
+                regionW,
+                regionH
+            );
+            this.ctx.drawImage(
+                this.canvas,
+                regionX,
+                regionY,
+                regionW,
+                regionH,
+                regionX + shiftX - Math.floor(20 * q),
+                regionY + shiftY + Math.floor(12 * q),
+                regionW,
+                regionH
+            );
+
+            // Scanline slices
+            this.ctx.globalCompositeOperation = "source-over";
+            this.ctx.globalAlpha = 0.98;
+            const slices = Math.max(3, Math.floor((6 + Math.random() * 6) * q));
+            for (let i = 0; i < slices; i++) {
+                const sliceH = Math.max(8, Math.floor(Math.random() * 90));
+                const y = regionY + Math.floor(Math.random() * Math.max(1, regionH - sliceH));
+                const localShift = Math.floor((Math.random() - 0.5) * 360 * q);
+                this.ctx.drawImage(
+                    this.canvas,
+                    regionX,
+                    y,
+                    regionW,
+                    sliceH,
+                    regionX + localShift,
+                    y,
+                    regionW,
+                    sliceH
+                );
+            }
+
+            // No luminance punch to avoid white tint
         }
 
-        // Slight luminance punch for visibility
-        this.ctx.globalCompositeOperation = "screen";
-        this.ctx.globalAlpha = 0.16;
-        this.ctx.fillStyle = '#ffffff';
-        this.ctx.fillRect(regionX, regionY, regionW, regionH);
+        this.ctx.restore();
+    }
 
+    drawPulseRings() {
+        if (!this.ctx) return;
+        const rings = 6;
+        const base = Math.max(40, Math.min(this.w, this.h) * 0.08);
+        const max = Math.min(this.w, this.h) * 0.48;
+        const t = (performance.now() % 4000) / 4000;
+        for (let i = 0; i < rings; i++) {
+            const phase = (t + i / rings) % 1;
+            const r = base + phase * (max - base) + this.avg * 0.35;
+            const alpha = 0.35 * (1 - phase);
+            this.ctx.beginPath();
+            this.ctx.lineWidth = 1 + i * 0.35;
+            this.ctx.strokeStyle = `rgba(77, 218, 248, ${alpha})`;
+            this.ctx.arc(this.cx, this.cy, r, 0, this.PI_TWO, false);
+            this.ctx.stroke();
+        }
+    }
+
+    drawPianoRoll() {
+        if (!this.midiNotes || !this.midiNotes.length || !this.canvas || !this.ctx) return;
+        const w = this.canvas.width;
+        const h = this.canvas.height;
+        const now = (this.audio && this.audio.currentTime) ? this.audio.currentTime : 0;
+        const windowSec = 8;
+        const leadSec = 1;
+        const start = Math.max(0, now - leadSec);
+        const end = start + windowSec;
+        const pxPerSec = w / windowSec;
+
+        this.ctx.save();
+        this.ctx.globalCompositeOperation = 'source-over';
+        this.ctx.globalAlpha = 0.9;
+
+        for (let i = 0; i < this.midiNotes.length; i++) {
+            const note = this.midiNotes[i];
+            const nStart = note.time;
+            const nEnd = note.time + note.duration;
+            if (nEnd < start || nStart > end) continue;
+            const x = (nStart - start) * pxPerSec;
+            const width = Math.max(1, note.duration * pxPerSec);
+            const y = h - ((note.midi / 127) * h);
+            const height = Math.max(2, h / 90);
+            const vel = Math.max(0.2, Math.min(1, note.velocity || 0.6));
+            const r = Math.round(60 + 180 * vel);
+            const g = Math.round(120 + 80 * (1 - vel));
+            const b = Math.round(200 - 120 * vel);
+            this.ctx.fillStyle = `rgba(${r},${g},${b},0.7)`;
+            this.ctx.fillRect(x, y - height, width, height);
+        }
+
+        const playheadX = (now - start) * pxPerSec;
+        this.ctx.strokeStyle = 'rgba(255,255,255,0.85)';
+        this.ctx.lineWidth = 2;
+        this.ctx.beginPath();
+        this.ctx.moveTo(playheadX, 0);
+        this.ctx.lineTo(playheadX, h);
+        this.ctx.stroke();
+
+        this.ctx.restore();
+    }
+
+    drawRadialBars() {
+        if (!this.ctx || !this.frequencyData) return;
+        const cx = this.cx;
+        const cy = this.cy;
+        const minDim = Math.min(this.w, this.h);
+        const inner = Math.max(30, minDim * 0.12);
+        const maxLen = Math.max(40, minDim * 0.28);
+        const bins = Math.min(this.frequencyData.length, 160);
+        const step = Math.PI * 2 / bins;
+
+        this.ctx.save();
+        this.ctx.lineWidth = 2;
+        for (let i = 0; i < bins; i++) {
+            const v = this.frequencyData[i] / 255;
+            const len = inner + v * maxLen;
+            const a = i * step;
+            const x1 = cx + Math.cos(a) * inner;
+            const y1 = cy + Math.sin(a) * inner;
+            const x2 = cx + Math.cos(a) * len;
+            const y2 = cy + Math.sin(a) * len;
+            const alpha = 0.25 + v * 0.55;
+            this.ctx.strokeStyle = `rgba(77, 218, 248, ${alpha.toFixed(3)})`;
+            this.ctx.beginPath();
+            this.ctx.moveTo(x1, y1);
+            this.ctx.lineTo(x2, y2);
+            this.ctx.stroke();
+        }
+        this.ctx.restore();
+    }
+
+    drawSpectrumSpiral() {
+        if (!this.ctx || !this.frequencyData) return;
+        const points = Math.min(this.frequencyData.length, 256);
+        const base = Math.min(this.w, this.h) * 0.06;
+        const max = Math.min(this.w, this.h) * 0.48;
+        this.ctx.save();
+        this.ctx.translate(this.cx, this.cy);
+        this.ctx.rotate((performance.now() % 12000) / 12000 * this.PI_TWO);
+        this.ctx.beginPath();
+        for (let i = 0; i < points; i++) {
+            const amp = this.frequencyData[i] / 255;
+            const radius = base + (i / points) * (max - base) + amp * 40;
+            const angle = i * 0.22;
+            const x = Math.cos(angle) * radius;
+            const y = Math.sin(angle) * radius;
+            if (i === 0) this.ctx.moveTo(x, y);
+            else this.ctx.lineTo(x, y);
+        }
+        this.ctx.strokeStyle = 'rgba(157, 242, 157, 0.55)';
+        this.ctx.lineWidth = 1.2;
+        this.ctx.stroke();
         this.ctx.restore();
     }
     

@@ -855,7 +855,9 @@ class LayAI {
         const finalTreble = this.treble + (this.trebledelta*this.getRandomInt(0,3));
         const finalBassFreq = this.bassfreq + (this.bassfreqdelta*this.getRandomInt(0,3));
         const finalTrebleFreq = this.treblefreq + (this.treblefreqdelta*this.getRandomInt(0,3));
-        const finalVolume = this.volume + (this.volumedelta*this.getRandomInt(0,3)) / 100;
+        let finalVolume = this.volume + (this.volumedelta*this.getRandomInt(0,3)) / 100;
+        // Ensure volume is at least 1 to avoid silent mixes from random math
+        if (finalVolume <= 0) finalVolume = Math.max(1, this.volume);
         // Tempo is now a multiplier (0.5-2.0), use tempodelta directly if set, otherwise default
         const finalTempo = this.tempodelta > 0 ? this.tempodelta : this.tempo;
         this.bass=finalBass;
@@ -874,6 +876,12 @@ class LayAI {
             this.addLog(`Mix generated: ${filename}`, 'success');
             this.setDownloadReady(filename, blob);
             this.updateMixPlayback(blob, { preserveTime: true, autoPlay: null });
+            
+            if (this.midiVisualData) {
+                this.applyMidiToVisualizer();
+                this.updateVisualizerModes();
+            }
+
             if (!this.hasAutoPlayedFirstMix && this.userGestureSeen) {
                 this.hasAutoPlayedFirstMix = true;
                 this.handlePlay();
@@ -1127,7 +1135,7 @@ class LayAI {
         const outputChannels = Math.max(1, this.audchnum || channelPool.length || 1);
         let mixBuffer = null;
         let attempts = 0;
-        const maxRetries = 2;
+        const maxRetries = 5;
 
         while (attempts <= maxRetries) {
             let panMapping = this.parsePanMapping(this.panfull, outputChannels, channelPool.length);
@@ -2511,7 +2519,7 @@ class LayAI {
             return;
         }
 
-                    this.showProgress(true, 'Converting MIDI...');
+                    this.showProgress(true, 'Exporting video...');
         const url = URL.createObjectURL(this.mixBlob);
         if (this.currentObjectUrl) {
             try { URL.revokeObjectURL(this.currentObjectUrl); } catch (e) {}
@@ -2757,7 +2765,7 @@ class LayAI {
         }
 
         this.addLog("Converting MIDI to WAV...", 'info');
-        this.showProgress(true, 'Exporting video...');
+        this.showProgress(true, 'Converting MIDI...');
         downloadLink.style.display = "none";
 
         try {

@@ -88,6 +88,8 @@ class LayAI {
         this.downloadBtn = document.getElementById('downloadBtn');
         this.exportVideoBtn = document.getElementById('exportVideoBtn');
         this.deleteBtn = document.getElementById('deleteBtn');
+        this.createResolutionDropdown();
+        this.createMidiDownloadButton();
         this.logOutput = document.getElementById('logOutput');
         this.progressOverlay = document.getElementById('progressOverlay');
         this.progressFill = document.getElementById('progressFill');
@@ -427,8 +429,67 @@ class LayAI {
         }
     }
 
+    createResolutionDropdown() {
+        if (!this.exportVideoBtn) return;
+
+        const select = document.createElement('select');
+        select.id = 'exportResolutionSelect';
+        select.style.marginLeft = '10px';
+        select.style.padding = '5px';
+        select.style.backgroundColor = '#222';
+        select.style.color = '#eee';
+        select.style.border = '1px solid #444';
+        select.style.borderRadius = '4px';
+        select.title = "Select Export Resolution (Aspect Ratio Locked)";
+
+        this.resolutionSelect = select;
+        this.exportVideoBtn.parentNode.insertBefore(select, this.exportVideoBtn.nextSibling);
+
+        const updateOptions = () => {
+            const w = window.innerWidth;
+            const h = window.innerHeight;
+            const aspect = w / h;
+            
+            // Save previous selection index if possible, or default to 0
+            const prevIndex = select.selectedIndex;
+            select.innerHTML = '';
+
+            const addOpt = (width, height, label) => {
+                const opt = document.createElement('option');
+                opt.value = `${Math.round(width)}x${Math.round(height)}`;
+                opt.textContent = label || `${Math.round(width)}x${Math.round(height)}`;
+                select.appendChild(opt);
+            };
+
+            addOpt(w, h, `Window (${Math.round(w)}x${Math.round(h)})`);
+            const heights = [720, 1080, 1440, 2160, 4320];
+            heights.forEach(th => { if (Math.abs(th - h) > 10) addOpt(th * aspect, th); });
+            
+            if (prevIndex > 0 && prevIndex < select.options.length) select.selectedIndex = prevIndex;
+        };
+
+        window.addEventListener('resize', updateOptions);
+        updateOptions();
+    }
+
+    createMidiDownloadButton() {
+        if (!this.downloadBtn || this.downloadMidiBtn) return;
+        const btn = document.createElement('button');
+        btn.id = 'downloadMidiBtn';
+        btn.textContent = 'Download MIDI';
+        btn.className = this.downloadBtn.className;
+        btn.classList.add('hidden');
+        btn.style.marginLeft = '10px';
+        if (this.downloadBtn.parentNode) {
+            this.downloadBtn.parentNode.insertBefore(btn, this.downloadBtn.nextSibling);
+        }
+        btn.addEventListener('click', () => this.handleDownloadMidi());
+        this.downloadMidiBtn = btn;
+    }
+
     async handleStart() {
         this.resetDownload();
+        this.midiVisualData = null;
         const songInput = document.getElementById('songInput');
         const craziness = parseInt(document.getElementById('craziness').value);
         const surround = document.getElementById('surround').value;
@@ -1107,10 +1168,64 @@ class LayAI {
             }
             mixBuffer = await this.applyTempo(mixBuffer, this.tempo);
         }
+        if (!this.midiVisualData) {
+            this.midiVisualData = await this.generateMidiFromBuffer(mixBuffer);
+        }
         const { blob, extension, mimeType } = await this.encodeMix(mixBuffer);
         this.mixMimeType = mimeType;
         this.addLog('Audio processing complete', 'success');
         return { blob, extension };
+    }
+
+    async generateMidiFromBuffer(buffer) {
+        if (!buffer) return null;
+        const channelData = buffer.getChannelData(0);
+        const sampleRate = buffer.sampleRate;
+        const notes = [];
+        const fftSize = 2048;
+        const hopSize = 1024; 
+        const rmsThreshold = 0.02;
+        const minPeriod = Math.floor(sampleRate / 2000);
+        const maxPeriod = Math.floor(sampleRate / 60);
+
+        for (let i = 0; i < channelData.length; i += hopSize) {
+            if (i + fftSize > channelData.length) break;
+            const chunk = channelData.subarray(i, i + fftSize);
+            
+            let sum = 0;
+            for (let j = 0; j < chunk.length; j++) sum += chunk[j] * chunk[j];
+            const rms = Math.sqrt(sum / chunk.length);
+            if (rms < rmsThreshold) continue;
+
+            let bestPeriod = 0;
+            let maxCorr = 0;
+            for (let p = minPeriod; p <= maxPeriod; p++) {
+                let corr = 0;
+                const len = fftSize - p;
+                for (let j = 0; j < len; j+=2) corr += chunk[j] * chunk[j + p];
+                if (corr > maxCorr) {
+                    maxCorr = corr;
+                    bestPeriod = p;
+                }
+            }
+
+            if (maxCorr > 0 && bestPeriod > 0) {
+                const frequency = sampleRate / bestPeriod;
+                const midi = Math.round(69 + 12 * Math.log2(frequency / 440));
+                if (midi < 21 || midi > 108) continue;
+
+                const time = i / sampleRate;
+                const duration = hopSize / sampleRate;
+                const lastNote = notes[notes.length - 1];
+                if (lastNote && lastNote.midi === midi && Math.abs((lastNote.time + lastNote.duration) - time) < 0.05) {
+                    lastNote.duration += duration;
+                    lastNote.velocity = Math.max(lastNote.velocity, Math.min(1, rms * 4));
+                } else {
+                    notes.push({ time, duration, midi, velocity: Math.min(1, rms * 4), track: 0 });
+                }
+            }
+        }
+        return { notes, duration: buffer.duration, sourceName: 'Audio Analysis' };
     }
 
     isBufferSilent(buffer, options = {}) {
@@ -2164,6 +2279,7 @@ class LayAI {
         this.downloadBtn.setAttribute('aria-disabled', 'true');
         this.playBtn.classList.add('hidden');
         this.playBtn.setAttribute('aria-disabled', 'true');
+        if (this.downloadMidiBtn) this.downloadMidiBtn.classList.add('hidden');
         if (this.generatedFilenameDisplay) this.generatedFilenameDisplay.textContent = '(none)';
     }
 
@@ -2185,6 +2301,9 @@ class LayAI {
         this.downloadBtn.removeAttribute('aria-disabled');
         this.playBtn.classList.remove('hidden');
         this.playBtn.removeAttribute('aria-disabled');
+        if (this.midiVisualData && this.downloadMidiBtn) {
+            this.downloadMidiBtn.classList.remove('hidden');
+        }
         this.addLog(`Ready to download: ${filename} (${this.getMimeType(ext)})`, 'info');
     }
 
@@ -2290,6 +2409,70 @@ class LayAI {
         URL.revokeObjectURL(url);
     }
 
+    handleDownloadMidi() {
+        if (!this.midiVisualData) return;
+        const blob = this.generateMidiBlob(this.midiVisualData);
+        if (!blob) {
+            this.addLog('Failed to generate MIDI file', 'error');
+            return;
+        }
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = url;
+        let filename = this.mixFilename ? this.mixFilename.replace(/\.[^.]+$/, '.mid') : 'mix.mid';
+        link.download = filename;
+        document.body.appendChild(link);
+        link.click();
+        link.remove();
+        URL.revokeObjectURL(url);
+        this.addLog(`Downloaded MIDI: ${filename}`, 'success');
+    }
+
+    generateMidiBlob(midiData) {
+        if (!midiData || !midiData.notes) return null;
+        const ppq = 480;
+        const bpm = 120;
+        const microsecondsPerBeat = Math.round(60000000 / bpm);
+        let trackEvents = [];
+        trackEvents.push({
+            tick: 0,
+            bytes: [0xFF, 0x51, 0x03, (microsecondsPerBeat >> 16) & 0xFF, (microsecondsPerBeat >> 8) & 0xFF, microsecondsPerBeat & 0xFF]
+        });
+        midiData.notes.forEach(note => {
+            const startTick = Math.round(note.time * (bpm / 60) * ppq);
+            const endTick = Math.round((note.time + note.duration) * (bpm / 60) * ppq);
+            const velocity = Math.min(127, Math.max(0, Math.round((note.velocity || 0.6) * 127)));
+            const pitch = Math.min(127, Math.max(0, Math.round(note.midi)));
+            trackEvents.push({ tick: startTick, bytes: [0x90, pitch, velocity] });
+            trackEvents.push({ tick: endTick, bytes: [0x80, pitch, 0] });
+        });
+        trackEvents.sort((a, b) => a.tick - b.tick);
+        let prevTick = 0;
+        const trackBytes = [];
+        const writeVarInt = (val) => {
+            if (val === 0) { trackBytes.push(0); return; }
+            const bytes = [];
+            bytes.push(val & 0x7F);
+            while (val >>= 7) bytes.push((val & 0x7F) | 0x80);
+            for (let i = bytes.length - 1; i >= 0; i--) trackBytes.push(bytes[i]);
+        };
+        trackEvents.forEach(event => {
+            const delta = event.tick - prevTick;
+            writeVarInt(delta);
+            event.bytes.forEach(b => trackBytes.push(b));
+            prevTick = event.tick;
+        });
+        writeVarInt(0);
+        trackBytes.push(0xFF, 0x2F, 0x00);
+        const header = [0x4D, 0x54, 0x68, 0x64, 0x00, 0x00, 0x00, 0x06, 0x00, 0x00, 0x00, 0x01, (ppq >> 8) & 0xFF, ppq & 0xFF];
+        const trackHeader = [0x4D, 0x54, 0x72, 0x6B, (trackBytes.length >> 24) & 0xFF, (trackBytes.length >> 16) & 0xFF, (trackBytes.length >> 8) & 0xFF, trackBytes.length & 0xFF];
+        const fileBytes = new Uint8Array(header.length + trackHeader.length + trackBytes.length);
+        fileBytes.set(header, 0);
+        fileBytes.set(trackHeader, header.length);
+        fileBytes.set(trackBytes, header.length + trackHeader.length);
+        return new Blob([fileBytes], { type: 'audio/midi' });
+    }
+
     getSupportedVideoMimeType() {
         if (!window.MediaRecorder) return '';
         const candidates = [
@@ -2356,8 +2539,8 @@ class LayAI {
         const onscreenCanvas = this.visualizer;
         const prevMuted = !!this.player.muted;
         const prevVolume = this.player.volume;
-        this.player.muted = true;
-        this.player.volume = 0;
+        // this.player.muted = true;
+        // this.player.volume = 0;
         const prevCanvasVisibility = onscreenCanvas.style.visibility;
         const prevCanvasOpacity = onscreenCanvas.style.opacity;
         onscreenCanvas.style.visibility = 'hidden';
@@ -2365,21 +2548,18 @@ class LayAI {
 
         const exportCanvas = document.createElement('canvas');
         const perfHz = this.visualizerObj && this.visualizerObj.vsyncHz ? this.visualizerObj.vsyncHz : 60;
-        let exportW = 3840;
-        let exportH = 2160;
-        if (perfHz >= 120) {
-            exportW = 7680;
-            exportH = 4320;
-        } else if (perfHz >= 90) {
-            exportW = 3840;
-            exportH = 2160;
-        } else if (perfHz >= 45) {
-            exportW = 1920;
-            exportH = 1080;
-        } else {
-            exportW = 1280;
-            exportH = 720;
+        // Use onscreen canvas dimensions to prevent cropping/scaling issues
+        let exportW = onscreenCanvas.width;
+        let exportH = onscreenCanvas.height;
+        
+        if (this.resolutionSelect && this.resolutionSelect.value) {
+            const parts = this.resolutionSelect.value.split('x');
+            if (parts.length === 2) {
+                exportW = parseInt(parts[0]);
+                exportH = parseInt(parts[1]);
+            }
         }
+        
         exportCanvas.width = exportW;
         exportCanvas.height = exportH;
 
